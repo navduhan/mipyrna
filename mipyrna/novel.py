@@ -349,7 +349,7 @@ class Novel_miRNA:
         return known_miRNAs, novel_miRNAs,  known_fasta, novel_fasta
 
 
-    def get_novel_miRNA(self,samples=None, cluster_cutoff = 28):
+    def get_novel_miRNA(self,samples=None, cluster_cutoff = 28, precursorStep=5):
        
         outputs = []
         
@@ -367,7 +367,7 @@ class Novel_miRNA:
                 if c.clust_size<cluster_cutoff:
                     df['mature'] = True
                     reads.append(df)
-                    N.append(self.get_putative_precursor(filtered_cluster=df))
+                    N.append(self.get_putative_precursor(filtered_cluster=df, precursor_step=precursorStep))
                 else:
                     anchor = df.iloc[0]
                     st = anchor.start
@@ -381,7 +381,7 @@ class Novel_miRNA:
                     other['mature'] = False
                     reads.append(other)
                     
-                    N.append(self.get_putative_precursor(filtered_cluster=mm, other=other))
+                    N.append(self.get_putative_precursor(filtered_cluster=mm, other=other, precursor_step=precursorStep))
                 
             final_data = pd.concat(N)
             
@@ -393,7 +393,7 @@ class Novel_miRNA:
 
             outputs.append(final_data)
 
-            final_data.to_csv(f"{mirna_temp}/{sample[2]}_raw_miRNA.txt", sep="\t", index=False)
+            final_data.to_csv(f"{mirna_temp}/{sample[0]}_raw_miRNA.txt", sep="\t", index=False)
             
         final = pd.concat(outputs)
 

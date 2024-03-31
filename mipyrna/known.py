@@ -27,7 +27,7 @@ class Known_miRNA():
 
         return
     
-    def _extract_rfam_unmapped(self, samples, rfam_samples):
+    def _extract_known_unmapped(self, samples, rfam_samples):
         
         outfiltered = {}
         
