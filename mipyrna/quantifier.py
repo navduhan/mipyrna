@@ -71,19 +71,6 @@ class Quantifier():
         
         sample_counts = self._get_counts(aligned_files=aligned_results)
         
-        sample_counts_dfs =[]
-        
-
-        for k, s in sample_counts.items():
-            
-            ucounts = s[2][['mature_id', 'counts']]
-            ucounts.columns =['mature_id', k]
-           
-            sample_counts_dfs.append(ucounts)
-        
-        final_counts = reduce(lambda left,right:pd.merge(left,right, on=['mature_id'], how='outer'),sample_counts_dfs).fillna(0)
-        final_counts['mature_id'] = final_counts['mature_id'].astype(str)
-        final_counts.iloc[:, 1:] = final_counts.iloc[:, 1:].astype(int)
-        final_counts.to_excel(f"{self.outdir}/Raw_read_counts.xlsx", index=False)
+        cc
         
         return final_counts

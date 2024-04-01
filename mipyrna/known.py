@@ -51,14 +51,16 @@ class Known_miRNA():
             
         return outfiltered
     
-    def align_rfam(self, cpu=8,mem=20):
+    def align_known(self, cpu=8,mem=20):
 
         
         mir = MirBase(species=self.species, speciesClass=self.species_type, outdir= self.outdir)
 
         mirbase_data = mir.get_species()
         
-        aln = Bowtie_Aligner(ref_genome=mirbase_data['mature'], outdir=self.outdir, slurm=self.slurm)
+        mirbase_file = mu.replace_U_with_T(mirbase_data['mature'], os.path.join(self.outdir, "mature_d2r.fa"))
+        
+        aln = Bowtie_Aligner(ref_genome=mirbase_file, outdir=self.outdir, slurm=self.slurm)
         
         aln.build_index(cpu=cpu)
         

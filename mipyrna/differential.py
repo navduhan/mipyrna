@@ -227,11 +227,11 @@ def run_edgeR(countDF=None, targetFile=None, combination=None,  mirna_column='ma
 
             groups = subTF['sample']
 
-            with localconverter(robjects.default_converter + pandas2ri.converter):
+            with localconverter(get_conversion() + pandas2ri.converter):
 
-                count_matrix = robjects.conversion.py2rpy(subDF)
+                count_matrix = py2rpy(countDF)
 
-                group = robjects.conversion.py2rpy(groups)
+                group = py2rpy(groups)
 
             dds = edgeR.DGEList(counts=count_matrix,group=group)
     
@@ -241,7 +241,7 @@ def run_edgeR(countDF=None, targetFile=None, combination=None,  mirna_column='ma
 
             robjects.r.assign('dds', dds)
 
-            design = robjects.r('design<-model.matrix(~0+dds$samples$group,data=dds$samples)')
+            design = robjects.r('model.matrix(~0+dds$samples$group,data=dds$samples)')
 
             design = pd.DataFrame(design)
 
@@ -269,11 +269,11 @@ def run_edgeR(countDF=None, targetFile=None, combination=None,  mirna_column='ma
 
             groups = targetFile['sample']
 
-            with localconverter(robjects.default_converter + pandas2ri.converter):
+            with localconverter(get_conversion() + pandas2ri.converter):
 
-                count_matrix = robjects.conversion.py2rpy(countDF)
+                count_matrix = py2rpy(countDF)
 
-                group = robjects.conversion.py2rpy(groups)
+                group = py2rpy(groups)
 
             dds = edgeR.DGEList(counts=count_matrix,group=group)
     
@@ -283,7 +283,7 @@ def run_edgeR(countDF=None, targetFile=None, combination=None,  mirna_column='ma
 
             robjects.r.assign('dds', dds)
 
-            design = robjects.r('design<-model.matrix(~0+dds$samples$group,data=dds$samples)')
+            design = robjects.r('model.matrix(~0+dds$samples$group,data=dds$samples)')
 
             design = pd.DataFrame(design)
 
@@ -339,7 +339,7 @@ def run_edgeR(countDF=None, targetFile=None, combination=None,  mirna_column='ma
     
     return edgeR_results
 
-def degFilter(degDF=None, CompareList=None, FDR=0.05, FOLD=2, plot=True, figsize=(10,6),text_size=14, replicate=True, mmg=False, extraColumns=False):
+def degFilter(degDF=None, CompareList=None, FDR=0.05, FOLD=2, plot=True, figsize=(10,6),text_size=14, replicate=True):
     """
     This function filter all gene expression file based on given FOLD and FDR
 
@@ -399,7 +399,7 @@ def degFilter(degDF=None, CompareList=None, FDR=0.05, FOLD=2, plot=True, figsize
 
     summary =pd.DataFrame({"Comparisons": CompareList, "Total_DEGs": Total, "Up_DEGs": Up, "Down_DEGs": Down})
 
-    if plot == True:
+    if plot== True:
 
         category_names= ['UP', 'Down']
         labels= summary['Comparisons'].values.tolist()
@@ -407,20 +407,20 @@ def degFilter(degDF=None, CompareList=None, FDR=0.05, FOLD=2, plot=True, figsize
         if len(labels)>10:
             hg = 15
         else:
-            hg = 10
+            hg = len(labels)
             
 
         updata= summary['Up_DEGs'].values.tolist()
         downdata = summary['Down_DEGs'].values.tolist()
         my_range=list(range(1,len(summary.index)+1))
         fig, ax = plt.subplots(figsize=(hg,hg),dpi=300)
-        ax.barh(labels,updata, color='mediumseagreen')
-        ax.barh(labels,downdata, left=updata, color='salmon')
+        ax.barh(labels,updata, height=0.5, color='mediumseagreen')
+        ax.barh(labels,downdata, left=updata, height=0.5, color='salmon')
         plt.xticks(fontsize=text_size, weight='bold')
         plt.yticks(fontsize=text_size, weight='bold')
         plt.xlabel("Number of Genes", fontsize=text_size, weight='bold', labelpad=20)
         plt.ylabel("Comparisons", fontsize=text_size, weight='bold', labelpad=20)
-        plt.legend(['Up-regulated', 'Down-regulated'],  ncol =2, loc='center', fontsize=text_size, bbox_to_anchor=(0.5, 1.1))
+        plt.legend(['Up-regulated', 'Down-regulated'],  ncol =2, loc='center', fontsize=6, bbox_to_anchor=(0.5, 1.1))
 
 
         ax.spines['top'].set_visible(False)
@@ -433,9 +433,9 @@ def degFilter(degDF=None, CompareList=None, FDR=0.05, FOLD=2, plot=True, figsize
         if replicate:
             plt.title(f'Filter DEGs (Fold:{FOLD} and FDR:{FDR})', loc='center', fontsize=text_size, weight='bold', pad=20)
         else:
-            plt.title(f'Filter DEGs (Fold:{FOLD} )', loc='center',fontsize=text_size, weight='bold', pad=20)
+            plt.title(f'Filter DEGs (Fold:{FOLD} )', loc='center',fontsize=12, weight='bold', pad=50)
         fig.tight_layout()
-        
+            
     return {'summary': summary, "filtered": DEGs,"filteredup":Ups, "filtereddown":Downs, "plot": fig}
 
        

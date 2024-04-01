@@ -396,3 +396,24 @@ def preprocess(df, classLabel,size):
         aa[i]=list(s)
 
     return aa, _classLabels
+
+def replace_U_with_T(input_file, output_file):
+    with open(input_file, 'r') as f_in:
+        fasta_lines = f_in.readlines()
+
+    # Iterate through each line in the FASTA file
+    modified_lines = []
+    for line in fasta_lines:
+        # Check if the line is a sequence line (starts with '>')
+        if line.startswith('>'):
+            modified_lines.append(line)  # If it's a sequence header, keep it unchanged
+        else:
+            # Replace 'U' with 'T' in the sequence
+            modified_sequence = line.replace('U', 'T')
+            modified_lines.append(modified_sequence)
+
+    # Write the modified content to the output file
+    with open(output_file, 'w') as f_out:
+        f_out.write(''.join(modified_lines))
+        
+    return output_file
