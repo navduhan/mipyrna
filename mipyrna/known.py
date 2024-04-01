@@ -72,4 +72,4 @@ class Known_miRNA():
         
             row[2].to_csv(f"{self.outdir}/{key}_known.txt", sep="\t", index=False)
 
-        return  self._extract_rfam_unmapped(samples=self.samples, rfam_samples=ncRNA_reads)  
+        return  self._extract_known_unmapped(samples=self.samples, rfam_samples=ncRNA_reads)  
