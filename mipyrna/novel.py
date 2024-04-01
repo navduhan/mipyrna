@@ -19,13 +19,19 @@ log = MiPyRNALogger(mode='a', log='novel')
 
 class Novel_miRNA:
 
-    def __init__(self,  genome=None, read_cutoff=50, species=None, species_type='plants', outdir="."):
+    def __init__(self,  samples = None, genome=None, read_cutoff=50, cluster_cutoff=28, precursor_step=5, species=None, score=0.5, filter_criteria='all', species_type='plants', outdir="."):
 
         self.genome = genome
         self.readsCutoff = read_cutoff
+        self.clusterCutoff = cluster_cutoff
         self.species = species
         self.species_type = species_type
         self.outdir = outdir
+        self.samples = samples
+        self.precursorStep = precursor_step
+        self.filterCriteria = filter_criteria
+        self.score = score
+        
 
         return
 
@@ -347,15 +353,15 @@ class Novel_miRNA:
         known_fasta = self._write_fasta(df=known_miRNAs, output=os.path.join(f"{self.outdir}/known_mature.fa"), type='known')
 
         return known_miRNAs, novel_miRNAs,  known_fasta, novel_fasta
+    
 
-
-    def get_novel_miRNA(self,samples=None, cluster_cutoff = 28, precursorStep=5):
+    def get_novel_miRNA(self):
        
         outputs = []
         
         mirna_temp = mu.make_directory(os.path.join(self.outdir, "temp"))
         
-        for key, sample in samples.items():
+        for key, sample in self.samples.items():
             
             reads = [] #stores reads associated with each cluster
             N = []
@@ -364,10 +370,10 @@ class Novel_miRNA:
             for i,c in clusts.iterrows():
                 df = sample[2][sample[2].cluster==c.cluster]
                 df = df.sort_values('reads',ascending=False)
-                if c.clust_size<cluster_cutoff:
+                if c.clust_size<self.clusterCutoff:
                     df['mature'] = True
                     reads.append(df)
-                    N.append(self.get_putative_precursor(filtered_cluster=df, precursor_step=precursorStep))
+                    N.append(self.get_putative_precursor(filtered_cluster=df, precursor_step=self.precursorStep))
                 else:
                     anchor = df.iloc[0]
                     st = anchor.start
@@ -381,7 +387,7 @@ class Novel_miRNA:
                     other['mature'] = False
                     reads.append(other)
                     
-                    N.append(self.get_putative_precursor(filtered_cluster=mm, other=other, precursor_step=precursorStep))
+                    N.append(self.get_putative_precursor(filtered_cluster=mm, other=other, precursor_step=self.precursorStep))
                 
             final_data = pd.concat(N)
             
@@ -401,17 +407,29 @@ class Novel_miRNA:
 
         final_miRNA.to_csv(os.path.join(self.outdir, "all_sample_pooled_miRNAs.txt"), sep="\t", index=False)
         
-        final_miRNA = final_miRNA[(final_miRNA['mature_check']=='ok') & (final_miRNA['score']>=0.5)]
-        final_miRNA.to_csv(os.path.join(self.outdir, "all_sample_filtered_miRNAs.txt"), sep="\t", index=False)
-        mature_out = os.path.join(self.outdir,"all_sample_pooled_mature.fa")
-        hairpin_out = os.path.join(self.outdir,"all_sample_pooled_hairpin.fa")
-        
-        self._write_fasta(final_miRNA,mature_out,type='raw',seq='mature')
-        self._write_fasta(final_miRNA,hairpin_out,type='raw',seq='hairpin')
+        if self.filterCriteria =='all':
+            
+            final_miRNA = final_miRNA[final_miRNA['score']>=self.score]
+            final_miRNA.to_csv(os.path.join(self.outdir, "all_sample_filtered_miRNAs.txt"), sep="\t", index=False)
+            mature_out = os.path.join(self.outdir,"all_sample_pooled_mature.fa")
+            hairpin_out = os.path.join(self.outdir,"all_sample_pooled_hairpin.fa")
+            self._write_fasta(final_miRNA,mature_out,type='raw',seq='mature')
+            self._write_fasta(final_miRNA,hairpin_out,type='raw',seq='hairpin')
 
+        if self.filterCriteria == 'strict':
+            
+            final_miRNA = final_miRNA[(final_miRNA['mature_status'] =='ok') &(final_miRNA['score']>=self.score)]
+            final_miRNA.to_csv(os.path.join(self.outdir, "all_sample_filtered_miRNAs.txt"), sep="\t", index=False)
+            mature_out = os.path.join(self.outdir,"all_sample_pooled_mature.fa")
+            hairpin_out = os.path.join(self.outdir,"all_sample_pooled_hairpin.fa")
+            self._write_fasta(final_miRNA,mature_out,type='raw',seq='mature')
+            self._write_fasta(final_miRNA,hairpin_out,type='raw',seq='hairpin')
+            
         known_miRNAs, novel_miRNAs, known_fasta, novel_fasta = self.predict_known_miRNAs(novel_df=final_miRNA)
         
         return known_miRNAs, novel_miRNAs, known_fasta, novel_fasta
+    
+    
     
 
     
