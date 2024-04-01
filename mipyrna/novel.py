@@ -111,7 +111,7 @@ class Novel_miRNA:
     def predict_precursor(self, df):
         positives = df['features'].values.tolist()
         file = pkg_resources.resource_filename('mipyrna', "data/plants_F5_100_train.h5")
-        # file='data/plants_F5_100_train.h5'
+       
         myModel=load_model(file,compile=False)
         samples, labels = mu.preprocess(positives, np.array([1,0]), 128) 
         Samples=samples.reshape(samples.shape[0], 1, samples.shape[1],1)
@@ -400,8 +400,9 @@ class Novel_miRNA:
         final_miRNA = self.filter_miRNA(final)
 
         final_miRNA.to_csv(os.path.join(self.outdir, "all_sample_pooled_miRNAs.txt"), sep="\t", index=False)
-        final_data = final_miRNA[(final_miRNA['mature_check']=='ok') & (final_miRNA['score']>=0.5)]
-        final_data.to_csv(os.path.join(self.outdir, "all_sample_filtered_miRNAs.txt"), sep="\t", index=False)
+        
+        final_miRNA = final_miRNA[(final_miRNA['mature_check']=='ok') & (final_miRNA['score']>=0.5)]
+        final_miRNA.to_csv(os.path.join(self.outdir, "all_sample_filtered_miRNAs.txt"), sep="\t", index=False)
         mature_out = os.path.join(self.outdir,"all_sample_pooled_mature.fa")
         hairpin_out = os.path.join(self.outdir,"all_sample_pooled_hairpin.fa")
         
