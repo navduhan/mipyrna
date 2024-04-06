@@ -116,7 +116,10 @@ class Novel_miRNA:
 
     def predict_precursor(self, df):
         positives = df['features'].values.tolist()
-        file = pkg_resources.resource_filename('mipyrna', "data/plants_F5_100_train.h5")
+        if self.species_type=='plants':
+            file = pkg_resources.resource_filename('mipyrna', "data/plants_F5_100_train.h5")
+        if self.species_type == 'animals':
+            file = pkg_resources.resource_filename('mipyrna', "data/animal_F5_train.h5")
        
         myModel=load_model(file,compile=False)
         samples, labels = mu.preprocess(positives, np.array([1,0]), 128) 
