@@ -103,42 +103,43 @@ This source code was developed in Linux, and has been tested on Linux and OS X. 
 Installation
 ------------
 
-The installation of miPyRNA can be done in two ways:
 
-1. Create a dedicated miniconda3 environment
-  
-    Download miPyRNA 0.2 from:
-          
-    [https://bioinfo.usu.edu/miPyRNA/download/miPyRNA-0.2.tar.gz](https://bioinfo.usu.edu/miPyRNA/download/miPyRNA-0.2.tar.gz)
+# miPyRNA Installation Guide
 
-    Download the Miniconda installer:
-          
-    [https://docs.conda.io/en/latest/miniconda.html#linux-installers](https://docs.conda.io/en/latest/miniconda.html#linux-installers)
+This guide explains how to install **miPyRNA** using either a Miniconda environment or Docker for cross-platform compatibility.
 
-    Extract the downloaded file:
+---
 
-    tar -xvzf miPyRNA-0.2.tar.gz
+## 1. Create a Dedicated Miniconda3 Environment
 
-    cd miPyRNA-0.2
+To set up **miPyRNA** in a Miniconda environment, first, clone the repository from GitHub by running:
 
-    chmod 755 INSTALL
+```bash
+git clone https://github.com/navduhan/mipyrna.git
+```
+Download the Miniconda installer:
 
-    ./INSTALL
-  
-2. Create a docker image from docker file for cross-platform 
+https://docs.conda.io/en/latest/miniconda.html#linux-installers
+```bash
+cd mipyrna
+
+conda env create -f mipyrna_environment.yaml
+
+pip install .
+
+```
+
+## 2. Create a docker image from docker file for cross-platform 
 
       
-    Download miPyRNA 0.2 from:
-          
-    [https://bioinfo.usu.edu/miPyRNA/download/miPyRNA-0.2.tar.gz](https://bioinfo.usu.edu/miPyRNA/download/miPyRNA-0.2.tar.gz)
+    clone the repository from GitHub by running:
 
-    Extract the downloaded file:
+    ```bash
+    git clone https://github.com/navduhan/mipyrna.git
 
-    tar -xvzf miPyRNA-0.2.tar.gz
+    cd mipyrna
 
-    cd miPyRNA-0.2
-
-    docker build -t miPyRNA .
+    docker build -t mipyrna .
     
     
 
