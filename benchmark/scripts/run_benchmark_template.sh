@@ -13,12 +13,19 @@ SPECIES="$4"
 MIRDEEP2_BIN_DIR="$5"
 RUN_MODE="${6:-local}"
 SLURM_PARTITION="${7:-${SLURM_PARTITION:-}}"
+PYTHON_BIN="${PYTHON_BIN:-${MIRDEEP2_BIN_DIR%/}/python}"
+
+if [[ ! -x "${PYTHON_BIN}" ]]; then
+  echo "Python executable not found at ${PYTHON_BIN}"
+  echo "Set PYTHON_BIN explicitly or pass a valid conda env bin path as arg5."
+  exit 6
+fi
 
 OUTDIR="${PROJECT_ROOT}/benchmark/results/$(basename "${RUNINFO}" .runinfo.csv)"
 mkdir -p "${OUTDIR}/logs" "${OUTDIR}/fastq"
 
 echo "[1/5] Preparing sample sheet from RunInfo"
-python3 - <<'PY' "${RUNINFO}" "${OUTDIR}/samples.txt"
+"${PYTHON_BIN}" - <<'PY' "${RUNINFO}" "${OUTDIR}/samples.txt"
 import sys
 import csv
 
@@ -57,11 +64,11 @@ if [[ "${RUN_MODE}" == "slurm" ]]; then
     echo "Pass partition as 7th argument or set SLURM_PARTITION env var."
     exit 5
   fi
-  cat > "${OUTDIR}/logs/mipyrna.workflow.sbatch.sh" <<EOF
+cat > "${OUTDIR}/logs/mipyrna.workflow.sbatch.sh" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 cd "${PROJECT_ROOT}"
-python3 -m mipyrna workflow \\
+"${PYTHON_BIN}" -m mipyrna workflow \\
   --input-file "${OUTDIR}/samples.txt" \\
   --input-path "${OUTDIR}/fastq" \\
   --genome "${GENOME}" \\
@@ -76,7 +83,7 @@ EOF
 else
   (
     cd "${PROJECT_ROOT}"
-    python3 -m mipyrna workflow \
+    "${PYTHON_BIN}" -m mipyrna workflow \
       --input-file "${OUTDIR}/samples.txt" \
       --input-path "${OUTDIR}/fastq" \
       --genome "${GENOME}" \
