@@ -25,3 +25,5 @@ bld.bat
 mipyrna/data/ncRNA_rfam.fa
 benchmark/results
 benchmark/fastq
+benchmark/metadata
+benchmark/references

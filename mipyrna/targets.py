@@ -7,7 +7,7 @@ Author: Naveen Duhan
 import os
 import shutil
 import subprocess
-import pkg_resources
+import importlib.resources as ir
 import pandas as pd
 
 from mipyrna.logger import MiPyRNALogger
@@ -76,8 +76,7 @@ def run_targets(miRNA_file=None, configFile=None, mRNA_file=None, slurm=False, o
     if configFile is not None:
         config = mu.parse_config_file(configFile)
     else:
-        stream = pkg_resources.resource_stream('mipyrna', "param/miranda.ini")
-        config = mu.parse_config_file(stream.name)
+        config = mu.parse_config_file(ir.files("mipyrna").joinpath("param/miranda.ini"))
         log.info("Using default config file miranda.ini")
 
     miranda_config = config[list(config.keys())[0]]

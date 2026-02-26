@@ -10,7 +10,7 @@ import os
 import subprocess
 import pandas as pd
 from Bio import SeqIO
-import pkg_resources
+import importlib.resources as ir
 import ssl
 ssl._create_default_https_context = ssl._create_unverified_context
 
@@ -42,7 +42,7 @@ class MirBase:
 
     def check_organim(self):
         
-        file = pkg_resources.resource_filename('mipyrna', "data/organisms.txt")
+        file = str(ir.files("mipyrna").joinpath("data/organisms.txt"))
         df = pd.read_csv(file, sep="\t")
 
         df.columns = ['Species', 'Division', 'Name', 'Tree', 'TaxID']

@@ -8,7 +8,7 @@ import numpy as np
 import forgi.graph.bulge_graph as fgb
 from  mipyrna.reads import Read_process
 from keras.models import load_model
-import pkg_resources
+import importlib.resources as ir
 from mipyrna import utility as mu
 from mipyrna.features import Precursor_Features
 from mipyrna.logger import MiPyRNALogger
@@ -172,9 +172,9 @@ class Novel_miRNA:
     def predict_precursor(self, df):
         positives = df['features'].values.tolist()
         if self.species_type=='plants':
-            file = pkg_resources.resource_filename('mipyrna', "data/plants_F5_100_train.h5")
+            file = str(ir.files("mipyrna").joinpath("data/plants_F5_100_train.h5"))
         if self.species_type == 'animals':
-            file = pkg_resources.resource_filename('mipyrna', "data/animals_F5_train.h5")
+            file = str(ir.files("mipyrna").joinpath("data/animals_F5_train.h5"))
        
         myModel=load_model(file,compile=False)
         samples, labels = mu.preprocess(positives, np.array([1,0]), 128) 

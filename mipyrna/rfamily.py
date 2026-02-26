@@ -11,7 +11,7 @@ from waiting import wait
 from mipyrna.aligner import Bowtie_Aligner
 from mipyrna import utility as mu
 from mipyrna.reads import Read_process
-import pkg_resources
+import importlib.resources as ir
 
 class FilterRNAfamlies():
 
@@ -51,7 +51,7 @@ class FilterRNAfamlies():
     
     def align_rfam(self, cpu=8,mem=20):
 
-        ncRNA_file = pkg_resources.resource_filename('mipyrna', "data/ncRNA_rfam.fa")
+        ncRNA_file = str(ir.files("mipyrna").joinpath("data/ncRNA_rfam.fa"))
         
         aln = Bowtie_Aligner(ref_genome=ncRNA_file, outdir=self.outdir, slurm=self.slurm)
         

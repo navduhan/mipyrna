@@ -12,7 +12,6 @@ from Bio import SeqIO
 from mipyrna.aligner import Bowtie_Aligner
 from mipyrna import utility as mu
 from mipyrna.reads import Read_process
-import pkg_resources
 from mipyrna.mirbase import MirBase
 
 class Known_miRNA():

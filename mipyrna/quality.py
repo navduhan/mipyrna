@@ -12,7 +12,7 @@ import os
 import sys
 import shutil
 import subprocess
-import pkg_resources
+import importlib.resources as ir
 
 from mipyrna.logger import MiPyRNALogger
 from mipyrna import utility as mu
@@ -51,9 +51,7 @@ def fastqcRun(sampleDict=None, configFile=None,slurm=False, mem=10, cpu=8, task=
         config = mu.parse_config_file(configFile)
 
     else:
-        stream = pkg_resources.resource_stream('mipyrna', "param/fastqc.ini")
-
-        config = mu.parse_config_file(stream.name)
+        config = mu.parse_config_file(ir.files("mipyrna").joinpath("param/fastqc.ini"))
 
         log.info("Using default config file fastqc.ini")
 

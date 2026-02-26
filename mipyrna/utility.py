@@ -152,8 +152,18 @@ def parse_config_file(infile):
     config = configparser.ConfigParser()
 
     try:
-
-        config.read([infile])
+        source_name = str(infile)
+        if hasattr(infile, "read"):
+            source_name = getattr(infile, "name", source_name)
+            config.read_file(infile)
+        elif hasattr(infile, "open") and not isinstance(infile, (str, os.PathLike)):
+            with infile.open("r", encoding="utf-8") as handle:
+                source_name = getattr(handle, "name", source_name)
+                config.read_file(handle)
+        else:
+            with open(infile, "r", encoding="utf-8") as handle:
+                source_name = getattr(handle, "name", source_name)
+                config.read_file(handle)
 
         sections = config.sections()
 
@@ -178,7 +188,7 @@ def parse_config_file(infile):
 
             sections_dict[section] = voption
 
-        log.info("Config generated succesfully from %s", infile)
+        log.info("Config generated succesfully from %s", source_name)
 
     except Exception:
 

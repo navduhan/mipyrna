@@ -9,7 +9,7 @@ import os
 import sys
 import shutil
 import subprocess
-import pkg_resources
+import importlib.resources as ir
 from mipyrna.logger import MiPyRNALogger
 from mipyrna import utility as mu
 from waiting import wait
@@ -47,9 +47,7 @@ class Bowtie_Aligner():
 
                 log.error("Please provide a valid config file")
         else:
-            stream = pkg_resources.resource_stream('mipyrna', "param/bowtie1.ini")
-
-            self.config = mu.parse_config_file(stream.name)
+            self.config = mu.parse_config_file(ir.files("mipyrna").joinpath("param/bowtie1.ini"))
            
             log.info("Using default config file bowtie.ini")
 
@@ -386,5 +384,4 @@ class Bowtie_Aligner():
 
 
             return outBAM
-
 

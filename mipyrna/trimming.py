@@ -13,7 +13,7 @@ import os
 import shutil
 import sys
 import subprocess
-import pkg_resources
+import importlib.resources as ir
 from mipyrna.logger import MiPyRNALogger
 from mipyrna import utility as mu
 
@@ -47,9 +47,7 @@ def flexbarRun(sampleDict,  configFile=None, slurm=False, mem=10, cpu=8, task=1,
 
             log.error("Please provide a valid config file. Using default config file flexbar.ini")
 
-            stream = pkg_resources.resource_stream('mipyrna', "param/flexbar.ini")
-
-            config = mu.parse_config_file(stream.name)
+            config = mu.parse_config_file(ir.files("mipyrna").joinpath("param/flexbar.ini"))
 
             log.error("Please provide a valid config file. Using default config file flexbar.ini")
 
@@ -57,9 +55,7 @@ def flexbarRun(sampleDict,  configFile=None, slurm=False, mem=10, cpu=8, task=1,
 
         log.info("Using default config file flexbar.ini")
 
-        stream = pkg_resources.resource_stream('mipyrna', "param/flexbar.ini")
-
-        config = mu.parse_config_file(stream.name)
+        config = mu.parse_config_file(ir.files("mipyrna").joinpath("param/flexbar.ini"))
 
         
     flexbar_config = config[list(config.keys())[0]]
@@ -219,18 +215,14 @@ def trimmomaticRun(sampleDict=None, configFile=None, slurm=False, mem=10, cpu=8,
 
                 log.info("Please provide a valid config file. Using default config file trimmomaticPE.ini")
             
-                stream = pkg_resources.resource_stream(
-                    'mipyrna', "param/trimmomaticPE.ini")
-                config = mu.parse_config_file(stream.name)
+                config = mu.parse_config_file(ir.files("mipyrna").joinpath("param/trimmomaticPE.ini"))
                 
 
             else:
 
                 log.info("Please provide a valid config file. Using default config file trimmomaticSE.ini")
                 
-                stream = pkg_resources.resource_stream(
-                    'mipyrna', "param/trimmomaticSE.ini")
-                config = mu.parse_config_file(stream.name)
+                config = mu.parse_config_file(ir.files("mipyrna").joinpath("param/trimmomaticSE.ini"))
                 
 
     else:
@@ -238,18 +230,14 @@ def trimmomaticRun(sampleDict=None, configFile=None, slurm=False, mem=10, cpu=8,
 
             log.info("Using default config file trimmomaticPE.ini")
 
-            stream = pkg_resources.resource_stream(
-                'mipyrna', "param/trimmomaticPE.ini")
-            config = mu.parse_config_file(stream.name)
+            config = mu.parse_config_file(ir.files("mipyrna").joinpath("param/trimmomaticPE.ini"))
             
 
         else:
 
             log.info("Using default config file trimmomaticSE.ini")
             
-            stream = pkg_resources.resource_stream(
-                'mipyrna', "param/trimmomaticSE.ini")
-            config = mu.parse_config_file(stream.name)
+            config = mu.parse_config_file(ir.files("mipyrna").joinpath("param/trimmomaticSE.ini"))
             
            
 
@@ -403,16 +391,12 @@ def trim_galoreRun(sampleDict=None, configFile=None, slurm=False, mem=10, cpu=8,
 
             log.error("Please provide a valid config file. Using default config file trim_galore.ini")
 
-            stream = pkg_resources.resource_stream(
-            'mipyrna', "param/trim_galore.ini")
-            config = mu.parse_config_file(stream.name)
+            config = mu.parse_config_file(ir.files("mipyrna").joinpath("param/trim_galore.ini"))
 
     else:
         log.info("Using default config file trim_galore.ini")
 
-        stream = pkg_resources.resource_stream(
-            'mipyrna', "param/trim_galore.ini")
-        config = mu.parse_config_file(stream.name)
+        config = mu.parse_config_file(ir.files("mipyrna").joinpath("param/trim_galore.ini"))
         
 
     trim_galore_config = config[list(config.keys())[0]]
