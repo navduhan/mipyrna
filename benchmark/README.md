@@ -6,6 +6,7 @@ This folder provides a reproducible benchmark framework to compare miPyRNA with 
 
 - `datasets_plant_mirna.tsv`: curated benchmark candidates with accession metadata.
 - `scripts/fetch_runinfo.sh`: resolve run-level metadata from NCBI (SRA RunInfo CSV).
+- `scripts/download_arabidopsis_reference.sh`: download Arabidopsis TAIR10 genome/annotation/cDNA.
 - `scripts/run_benchmark_template.sh`: template benchmark runner.
 
 ## Recommended initial benchmark panel
@@ -27,6 +28,12 @@ bash scripts/fetch_runinfo.sh GSE12037 metadata
 bash scripts/fetch_runinfo.sh PRJNA653584 metadata
 ```
 
+Download Arabidopsis TAIR10 references:
+
+```bash
+bash scripts/download_arabidopsis_reference.sh references/arabidopsis_tair10
+```
+
 Install environment (includes `miRDeep2`):
 
 ```bash
@@ -40,9 +47,22 @@ Then run benchmark template after downloading FASTQ files:
 bash scripts/run_benchmark_template.sh \
   /path/to/project \
   benchmark/metadata/GSE13605.runinfo.csv \
-  /path/to/genome.fa \
+  benchmark/references/arabidopsis_tair10/Arabidopsis_thaliana.TAIR10.dna.toplevel.fa \
   ath \
-  /path/to/mirdeep2_dir
+  /path/to/mirdeep2_dir \
+  local
+```
+
+Run with Slurm:
+
+```bash
+bash scripts/run_benchmark_template.sh \
+  /path/to/project \
+  benchmark/metadata/GSE13605.runinfo.csv \
+  benchmark/references/arabidopsis_tair10/Arabidopsis_thaliana.TAIR10.dna.toplevel.fa \
+  ath \
+  /path/to/mirdeep2_dir \
+  slurm
 ```
 
 ## Notes

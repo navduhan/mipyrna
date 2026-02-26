@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [[ $# -lt 5 ]]; then
-  echo "Usage: $0 <PROJECT_ROOT> <RUNINFO_CSV> <GENOME_FA> <SPECIES_CODE> <MIRDEEP2_BIN_DIR>"
+  echo "Usage: $0 <PROJECT_ROOT> <RUNINFO_CSV> <GENOME_FA> <SPECIES_CODE> <MIRDEEP2_BIN_DIR> [local|slurm]"
   exit 1
 fi
 
@@ -11,6 +11,7 @@ RUNINFO="$2"
 GENOME="$3"
 SPECIES="$4"
 MIRDEEP2_BIN_DIR="$5"
+RUN_MODE="${6:-local}"
 
 OUTDIR="${PROJECT_ROOT}/benchmark/results/$(basename "${RUNINFO}" .runinfo.csv)"
 mkdir -p "${OUTDIR}/logs" "${OUTDIR}/fastq"
@@ -47,24 +48,50 @@ echo "       RunInfo: ${RUNINFO}"
 echo "       FASTQ dir: ${OUTDIR}/fastq"
 
 echo "[3/5] Run miPyRNA workflow"
-(
-  cd "${PROJECT_ROOT}"
-  python3 -m mipyrna workflow \
-    --input-file "${OUTDIR}/samples.txt" \
-    --input-path "${OUTDIR}/fastq" \
-    --genome "${GENOME}" \
-    --species "${SPECIES}" \
-    --species-type plants \
-    --outdir "${OUTDIR}/mipyrna" \
-    --skip-qc \
-    --run-enrichment \
-    > "${OUTDIR}/logs/mipyrna.workflow.log" 2>&1
-)
+if [[ "${RUN_MODE}" == "slurm" ]]; then
+  if ! command -v sbatch >/dev/null 2>&1; then
+    echo "RUN_MODE=slurm requested but sbatch was not found"
+    exit 4
+  fi
+  cat > "${OUTDIR}/logs/mipyrna.workflow.sbatch.sh" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+cd "${PROJECT_ROOT}"
+python3 -m mipyrna workflow \\
+  --input-file "${OUTDIR}/samples.txt" \\
+  --input-path "${OUTDIR}/fastq" \\
+  --genome "${GENOME}" \\
+  --species "${SPECIES}" \\
+  --species-type plants \\
+  --outdir "${OUTDIR}/mipyrna" \\
+  --skip-qc \\
+  --run-enrichment
+EOF
+  chmod +x "${OUTDIR}/logs/mipyrna.workflow.sbatch.sh"
+  sbatch -J mipyrna_benchmark -o "${OUTDIR}/logs/mipyrna.workflow.out" -e "${OUTDIR}/logs/mipyrna.workflow.err" "${OUTDIR}/logs/mipyrna.workflow.sbatch.sh"
+else
+  (
+    cd "${PROJECT_ROOT}"
+    python3 -m mipyrna workflow \
+      --input-file "${OUTDIR}/samples.txt" \
+      --input-path "${OUTDIR}/fastq" \
+      --genome "${GENOME}" \
+      --species "${SPECIES}" \
+      --species-type plants \
+      --outdir "${OUTDIR}/mipyrna" \
+      --skip-qc \
+      --run-enrichment \
+      > "${OUTDIR}/logs/mipyrna.workflow.log" 2>&1
+  )
+fi
 
 echo "[4/5] Run miRDeep2 baseline (template command; adjust mapper/pl options)"
 echo "       Example:"
 echo "       ${MIRDEEP2_BIN_DIR}/mapper.pl reads.fastq -e -h -j -m -l 18 -s reads_collapsed.fa -t reads_vs_genome.arf -p bowtie_index"
 echo "       ${MIRDEEP2_BIN_DIR}/miRDeep2.pl reads_collapsed.fa genome.fa reads_vs_genome.arf mature.fa none hairpin.fa -t plant"
+if [[ "${RUN_MODE}" == "slurm" ]]; then
+  echo "       Tip: submit these commands as an sbatch job for direct cluster comparison."
+fi
 
 echo "[5/5] Save comparison metrics"
 echo "       Compare:"
