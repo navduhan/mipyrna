@@ -13,6 +13,8 @@ mkdir -p "${OUTDIR}"
 
 TMP_ES="${OUTDIR}/${ACCESSION}.esearch.xml"
 TMP_SUMMARY="${OUTDIR}/${ACCESSION}.esummary.xml"
+TMP_GDS="${OUTDIR}/${ACCESSION}.gds.xml"
+TMP_ELINK="${OUTDIR}/${ACCESSION}.elink.xml"
 OUT_RUNINFO="${OUTDIR}/${ACCESSION}.runinfo.csv"
 KEEP_XML="${KEEP_XML:-0}"
 
@@ -23,8 +25,29 @@ curl -fsSLG "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi" \
   -o "${TMP_ES}"
 
 ID_LIST="$(grep -oE '<Id>[0-9]+</Id>' "${TMP_ES}" | sed -E 's#</?Id>##g' | paste -sd, -)"
+
+# Fallback for GEO series accessions: GSE -> GDS -> linked SRA IDs.
+if [[ -z "${ID_LIST}" && "${ACCESSION}" == GSE* ]]; then
+  echo "Direct SRA lookup failed for ${ACCESSION}; trying GEO->SRA link fallback..."
+  curl -fsSLG "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi" \
+    --data-urlencode "db=gds" \
+    --data-urlencode "term=${ACCESSION}[Accession]" \
+    --data-urlencode "retmax=20" \
+    -o "${TMP_GDS}"
+
+  GDS_ID_LIST="$(grep -oE '<Id>[0-9]+</Id>' "${TMP_GDS}" | sed -E 's#</?Id>##g' | paste -sd, -)"
+  if [[ -n "${GDS_ID_LIST}" ]]; then
+    curl -fsSLG "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/elink.fcgi" \
+      --data-urlencode "dbfrom=gds" \
+      --data-urlencode "db=sra" \
+      --data-urlencode "id=${GDS_ID_LIST}" \
+      -o "${TMP_ELINK}"
+    ID_LIST="$(grep -oE '<Id>[0-9]+</Id>' "${TMP_ELINK}" | sed -E 's#</?Id>##g' | paste -sd, -)"
+  fi
+fi
+
 if [[ -z "${ID_LIST}" ]]; then
-  echo "No SRA records found for ${ACCESSION}"
+  echo "No SRA records found for ${ACCESSION} (direct or GEO-linked lookup)"
   exit 2
 fi
 
@@ -38,6 +61,6 @@ fi
 
 curl -fsSL "https://trace.ncbi.nlm.nih.gov/Traces/sra-db-be/run_new?acc=${RUNS}" -o "${OUT_RUNINFO}"
 if [[ "${KEEP_XML}" != "1" ]]; then
-  rm -f "${TMP_ES}" "${TMP_SUMMARY}"
+  rm -f "${TMP_ES}" "${TMP_SUMMARY}" "${TMP_GDS}" "${TMP_ELINK}"
 fi
 echo "Saved: ${OUT_RUNINFO}"
