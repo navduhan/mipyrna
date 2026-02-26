@@ -15,7 +15,11 @@ TMP_ES="${OUTDIR}/${ACCESSION}.esearch.xml"
 TMP_SUMMARY="${OUTDIR}/${ACCESSION}.esummary.xml"
 OUT_RUNINFO="${OUTDIR}/${ACCESSION}.runinfo.csv"
 
-curl -fsSL "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=sra&term=${ACCESSION}[All%20Fields]&retmax=5000" -o "${TMP_ES}"
+curl -fsSLG "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi" \
+  --data-urlencode "db=sra" \
+  --data-urlencode "term=${ACCESSION}[All Fields]" \
+  --data-urlencode "retmax=5000" \
+  -o "${TMP_ES}"
 
 ID_LIST="$(grep -oE '<Id>[0-9]+</Id>' "${TMP_ES}" | sed -E 's#</?Id>##g' | paste -sd, -)"
 if [[ -z "${ID_LIST}" ]]; then
