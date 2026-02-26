@@ -14,6 +14,7 @@ mkdir -p "${OUTDIR}"
 TMP_ES="${OUTDIR}/${ACCESSION}.esearch.xml"
 TMP_SUMMARY="${OUTDIR}/${ACCESSION}.esummary.xml"
 OUT_RUNINFO="${OUTDIR}/${ACCESSION}.runinfo.csv"
+KEEP_XML="${KEEP_XML:-0}"
 
 curl -fsSLG "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi" \
   --data-urlencode "db=sra" \
@@ -36,4 +37,7 @@ if [[ -z "${RUNS}" ]]; then
 fi
 
 curl -fsSL "https://trace.ncbi.nlm.nih.gov/Traces/sra-db-be/run_new?acc=${RUNS}" -o "${OUT_RUNINFO}"
+if [[ "${KEEP_XML}" != "1" ]]; then
+  rm -f "${TMP_ES}" "${TMP_SUMMARY}"
+fi
 echo "Saved: ${OUT_RUNINFO}"
