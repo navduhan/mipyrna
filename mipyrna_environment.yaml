@@ -60,7 +60,7 @@ dependencies:
   - samtools
   - bamtools
   - bedtools
-  - ncbi-blast+
+  - blast
   - mirdeep2
   - miranda
   - ucsc-fasomerecords
