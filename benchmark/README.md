@@ -70,6 +70,16 @@ bash scripts/run_benchmark_template.sh \
   ath \
   /path/to/mirdeep2_dir \
   slurm
+
+# Or set partition explicitly as the 7th argument
+bash scripts/run_benchmark_template.sh \
+  /path/to/project \
+  benchmark/metadata/GSE13605.runinfo.csv \
+  benchmark/references/arabidopsis_tair10/Arabidopsis_thaliana.TAIR10.dna.toplevel.fa \
+  ath \
+  /path/to/mirdeep2_dir \
+  slurm \
+  compute
 ```
 
 ## Notes

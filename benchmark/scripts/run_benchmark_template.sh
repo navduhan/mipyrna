@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [[ $# -lt 5 ]]; then
-  echo "Usage: $0 <PROJECT_ROOT> <RUNINFO_CSV> <GENOME_FA> <SPECIES_CODE> <MIRDEEP2_BIN_DIR> [local|slurm]"
+  echo "Usage: $0 <PROJECT_ROOT> <RUNINFO_CSV> <GENOME_FA> <SPECIES_CODE> <MIRDEEP2_BIN_DIR> [local|slurm] [slurm_partition]"
   exit 1
 fi
 
@@ -12,6 +12,7 @@ GENOME="$3"
 SPECIES="$4"
 MIRDEEP2_BIN_DIR="$5"
 RUN_MODE="${6:-local}"
+SLURM_PARTITION="${7:-${SLURM_PARTITION:-}}"
 
 OUTDIR="${PROJECT_ROOT}/benchmark/results/$(basename "${RUNINFO}" .runinfo.csv)"
 mkdir -p "${OUTDIR}/logs" "${OUTDIR}/fastq"
@@ -51,6 +52,11 @@ if [[ "${RUN_MODE}" == "slurm" ]]; then
     echo "RUN_MODE=slurm requested but sbatch was not found"
     exit 4
   fi
+  if [[ -z "${SLURM_PARTITION}" ]]; then
+    echo "RUN_MODE=slurm requested but no partition provided."
+    echo "Pass partition as 7th argument or set SLURM_PARTITION env var."
+    exit 5
+  fi
   cat > "${OUTDIR}/logs/mipyrna.workflow.sbatch.sh" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
@@ -66,7 +72,7 @@ python3 -m mipyrna workflow \\
   --run-enrichment
 EOF
   chmod +x "${OUTDIR}/logs/mipyrna.workflow.sbatch.sh"
-  sbatch -J mipyrna_benchmark -o "${OUTDIR}/logs/mipyrna.workflow.out" -e "${OUTDIR}/logs/mipyrna.workflow.err" "${OUTDIR}/logs/mipyrna.workflow.sbatch.sh"
+  sbatch -p "${SLURM_PARTITION}" -J mipyrna_benchmark -o "${OUTDIR}/logs/mipyrna.workflow.out" -e "${OUTDIR}/logs/mipyrna.workflow.err" "${OUTDIR}/logs/mipyrna.workflow.sbatch.sh"
 else
   (
     cd "${PROJECT_ROOT}"
