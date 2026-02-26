@@ -19,28 +19,26 @@ mkdir -p "${OUTDIR}/logs" "${OUTDIR}/fastq"
 echo "[1/5] Preparing sample sheet from RunInfo"
 python3 - <<'PY' "${RUNINFO}" "${OUTDIR}/samples.txt"
 import sys
-import pandas as pd
+import csv
 
-runinfo = pd.read_csv(sys.argv[1])
+runinfo = sys.argv[1]
 out = sys.argv[2]
 
-cols = ["SampleName", "Replication", "Identifier", "File1", "File2"]
-rows = []
 rep_map = {}
-for _, r in runinfo.iterrows():
-    srr = str(r.get("Run", "")).strip()
-    if not srr:
-        continue
-    condition = str(r.get("LibraryName", r.get("SampleName", "group"))).replace(" ", "_")
-    rep_map.setdefault(condition, 0)
-    rep_map[condition] += 1
-    rep = f"{condition}_rep{rep_map[condition]}"
-    rows.append([rep, rep, condition, f"{srr}.fastq.gz", ""])
-
-df = pd.DataFrame(rows, columns=cols)
 with open(out, "w") as fh:
     fh.write("# benchmark sample sheet\n")
-df.to_csv(out, sep="\t", index=False, mode="a")
+    fh.write("SampleName\tReplication\tIdentifier\tFile1\tFile2\n")
+    with open(runinfo, newline="") as inf:
+        reader = csv.DictReader(inf)
+        for r in reader:
+            srr = str(r.get("Run", "")).strip()
+            if not srr:
+                continue
+            condition = str(r.get("LibraryName", r.get("SampleName", "group"))).replace(" ", "_")
+            rep_map.setdefault(condition, 0)
+            rep_map[condition] += 1
+            rep = f"{condition}_rep{rep_map[condition]}"
+            fh.write(f"{rep}\t{rep}\t{condition}\t{srr}.fastq.gz\t\n")
 PY
 
 echo "[2/5] Download FASTQ runs with fasterq-dump/prefetch (user fills this step)"
