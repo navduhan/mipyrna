@@ -23,3 +23,5 @@ meta.yaml
 build.sh
 bld.bat
 mipyrna/data/ncRNA_rfam.fa
+benchmark/results
+benchmark/fastq

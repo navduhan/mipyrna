@@ -21,8 +21,7 @@ class MirBase:
         self.species_class = speciesClass
         self.outdir = outdir
         if not self.check_organim():
-
-            print("Please provide a valid species")
+            raise ValueError(f"Invalid species code: {self.species}")
             
 
 
@@ -51,7 +50,7 @@ class MirBase:
         if self.species in df['Species'].values.tolist():
             return True
 
-        return True
+        return False
 
 
     def get_mature(self):

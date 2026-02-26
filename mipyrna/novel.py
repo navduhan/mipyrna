@@ -19,7 +19,25 @@ log = MiPyRNALogger(mode='a', log='novel')
 
 class Novel_miRNA:
 
-    def __init__(self,  samples = None, genome=None, read_cutoff=50, cluster_cutoff=28, precursor_step=5, species=None, score=0.5, filter_criteria='all', species_type='plants', outdir="."):
+    def __init__(
+        self,
+        samples=None,
+        genome=None,
+        read_cutoff=50,
+        cluster_cutoff=28,
+        precursor_step=5,
+        species=None,
+        score=0.5,
+        filter_criteria='all',
+        species_type='plants',
+        outdir=".",
+        randfold_iterations=100,
+        randfold_pvalue_cutoff=0.05,
+        min_mature_reads=10,
+        min_star_reads=1,
+        require_star=False,
+        random_seed=42
+    ):
 
         self.genome = genome
         self.readsCutoff = read_cutoff
@@ -31,7 +49,12 @@ class Novel_miRNA:
         self.precursorStep = precursor_step
         self.filterCriteria = filter_criteria
         self.score = score
-        
+        self.randfold_iterations = randfold_iterations
+        self.randfold_pvalue_cutoff = randfold_pvalue_cutoff
+        self.min_mature_reads = min_mature_reads
+        self.min_star_reads = min_star_reads
+        self.require_star = require_star
+        self.rng = np.random.default_rng(random_seed)
 
         return
 
@@ -114,6 +137,38 @@ class Novel_miRNA:
                         return star
         return
 
+    def estimate_randfold_pvalue(self, precursor):
+        """Approximate randfold significance via shuffled-sequence MFEs."""
+        if not precursor:
+            return 1.0
+        seq = precursor.replace('T', 'U')
+        _, observed_mfe = RNA.fold(seq)
+        better_or_equal = 0
+        for _ in range(self.randfold_iterations):
+            shuffled = ''.join(self.rng.permutation(list(seq)))
+            _, shuffled_mfe = RNA.fold(shuffled)
+            if shuffled_mfe <= observed_mfe:
+                better_or_equal += 1
+        # +1 smoothing avoids zero p-values on small permutations.
+        pvalue = (better_or_equal + 1) / (self.randfold_iterations + 1)
+        return float(pvalue)
+
+    def mirdeep2_like_score(self, row):
+        """Heuristic miRDeep2-style score using read, structure, and randfold evidence."""
+        score = 0.0
+        score += np.log2(float(row.get("mature_reads", 0)) + 1.0)
+        score += 0.5 * np.log2(float(row.get("star_reads", 0)) + 1.0)
+        if row.get("mature_check") == "ok":
+            score += 1.0
+        mfe = float(row.get("mfe", 0.0))
+        if mfe < 0:
+            score += min(3.0, abs(mfe) / 20.0)
+        if float(row.get("randfold_pvalue", 1.0)) <= self.randfold_pvalue_cutoff:
+            score += 1.5
+        if isinstance(row.get("star"), str) and len(row.get("star")) > 0:
+            score += 0.5
+        return round(score, 4)
+
     def predict_precursor(self, df):
         positives = df['features'].values.tolist()
         if self.species_type=='plants':
@@ -131,22 +186,21 @@ class Novel_miRNA:
         return df
 
     def get_putative_precursor(self, filtered_cluster=None,  other=None,  seqlength=20, loop=20, precursor_step= 10 ):
-        
-        global mature_status
+
         putative_precursor = []
         
         x = filtered_cluster.iloc[0]
-        ref_coords = (x['name'], x.start-10, x.end+10, x.strand)
+        ref_coords = (x['name'], max(0, x.start-10), x.end+10, x.strand)
         # first get a sequence from reference genome based on coordinates
         refseq =  Read_process(reference=self.genome).get_sequence(ref_coords)
         # check whether any sequencing reads is in sequence above
         mature_mirna = Read_process(reference=self.genome).get_consensus_read(ref_precursor=refseq, aligned_cluster=filtered_cluster)
-        # for i, x in filtered_cluster.iterrows():
-        coords = (x['name'], x.start, x.start, x.strand)
+        coords = (x['name'], x.start, x.end, x.strand)
         chrom, start, end, strand = coords
-        mature_mirna =x.seq
+        if mature_mirna is None:
+            mature_mirna = x.seq
     
-        if mature_mirna != None:
+        if mature_mirna is not None:
             seqlen = len(mature_mirna)
         else:
             seqlen = seqlength
@@ -156,8 +210,10 @@ class Novel_miRNA:
 
         for i in range(10, 60, precursor_step):
         
-            start5 = start - 1 
+            start5 = max(0, start - 1)
             end5 = start + 2 * seqlen-1 + loop + i
+            if end5 <= start5:
+                continue
             coords = [chrom,start5,end5,strand]
         
             precursor_seq = Read_process(reference=self.genome).get_sequence(coords)
@@ -187,8 +243,10 @@ class Novel_miRNA:
 
         for i in range(10,60, precursor_step):
 
-            start3 = start - (loop + seqlen + i)
+            start3 = max(0, start - (loop + seqlen + i))
             end3 = end + seqlen + 1 
+            if end3 <= start3:
+                continue
             coords = [chrom,start3,end3,strand]
             
             precursor_seq = Read_process(reference=self.genome).get_sequence(coords)
@@ -219,42 +277,38 @@ class Novel_miRNA:
                     'strand':strand, 'struct':struct,'mfe':sc,  'mature_check': mature_status, 'features': m, 'mature_reads': maturecounts,  'position': '3-prime'})
         putative_precursor = pd.DataFrame(putative_precursor)
         
-        if len(putative_precursor)>0:
-            P = putative_precursor.iloc[0].copy()
-            
-        else:
+        if len(putative_precursor) == 0:
             return
-        
-        star = self.find_star_sequence(P.precursor, P.mature)
-        starcounts = 0
-        if other is not None and star != None:
-            s = self.find_subseq(P.precursor, star)
 
-            ss = P.start+s; se = ss+len(star)
+        stars = []
+        star_counts = []
+        pvalues = []
+        for _, row in putative_precursor.iterrows():
+            star = self.find_star_sequence(row.precursor, row.mature)
+            stars.append(star)
+            starcount = 0
+            if other is not None and star is not None:
+                s = self.find_subseq(row.precursor, star)
+                if s >= 0:
+                    ss = row.start + s
+                    se = ss + len(star)
+                    sreads = other[(other.start >= ss-2) & (other.end <= se+3)]
+                    starcount = sreads.reads.sum()
+            star_counts.append(starcount)
+            pvalues.append(self.estimate_randfold_pvalue(row.precursor))
 
-            sreads = other[(other.start>=ss-2) & (other.end<=se+3)]
-            starcounts = sreads.reads.sum()
-            
-        putative_precursor['star_reads'] = starcounts
-        putative_precursor['star'] = star
+        putative_precursor['star_reads'] = star_counts
+        putative_precursor['star'] = stars
+        putative_precursor['randfold_pvalue'] = pvalues
         putative_precursor['cluster'] = x.cluster
+        putative_precursor['mirdeep2_score'] = putative_precursor.apply(self.mirdeep2_like_score, axis=1)
         
         return putative_precursor
     
     def filter_miRNA(self, df):
-        # Group by the 'mature' column and aggregate other columns with desired functions
-        grouped = df.groupby('mature').agg({'chrom': 'first', 'mature_length': 'first', 'precursor': 'first',
-                                            'precursor_length': 'first', 'start': 'first', 'end': 'first',
-                                            'mature_start': 'first', 'strand': 'first', 'struct': 'first',
-                                            'mfe': 'first', 'mature_check': 'first', 'mature_reads': 'first',
-                                            'position': 'first', 'star_reads': 'first', 'star': 'first',
-                                            'cluster': 'first', 'score': 'max'}).reset_index()
-
-        # Create a dictionary from the grouped DataFrame
-        final = {row['mature']: row.tolist()[1:] for _, row in grouped.iterrows()}
-
-        final_miRNAs = pd.DataFrame.from_dict(final, orient='index', columns=grouped.columns[1:]).reset_index()
-        final_miRNAs.columns = ['mature'] + list(grouped.columns[1:])
+        # Keep the single best-scoring precursor per mature sequence.
+        idx = df.groupby('mature')['score'].idxmax().tolist()
+        final_miRNAs = df.loc[idx].reset_index(drop=True)
 
         try:
             final_miRNAs['Novel_ID'] = [f"{self.species}_mipyrna_{final_miRNAs.iloc[i]['chrom']}_miR_{i + 1}"
@@ -263,6 +317,17 @@ class Novel_miRNA:
             pass
 
         return final_miRNAs
+
+    def apply_strict_filters(self, df):
+        mask = (
+            (df['mature_check'] == 'ok')
+            & (df['score'] >= self.score)
+            & (df['mature_reads'] >= self.min_mature_reads)
+            & (df['randfold_pvalue'] <= self.randfold_pvalue_cutoff)
+        )
+        if self.require_star:
+            mask = mask & (df['star_reads'] >= self.min_star_reads)
+        return df[mask].copy()
     
     def _write_fasta(self, df, output, type='known', seq='mature'):
         mature_seq = []
@@ -376,7 +441,9 @@ class Novel_miRNA:
                 if c.clust_size<self.clusterCutoff:
                     df['mature'] = True
                     reads.append(df)
-                    N.append(self.get_putative_precursor(filtered_cluster=df, precursor_step=self.precursorStep))
+                    candidate = self.get_putative_precursor(filtered_cluster=df, precursor_step=self.precursorStep)
+                    if candidate is not None and len(candidate) > 0:
+                        N.append(candidate)
                 else:
                     anchor = df.iloc[0]
                     st = anchor.start
@@ -390,21 +457,31 @@ class Novel_miRNA:
                     other['mature'] = False
                     reads.append(other)
                     
-                    N.append(self.get_putative_precursor(filtered_cluster=mm, other=other, precursor_step=self.precursorStep))
-                
-            final_data = pd.concat(N)
-            
-            final_reads = pd.concat(reads)
+                    candidate = self.get_putative_precursor(filtered_cluster=mm, other=other, precursor_step=self.precursorStep)
+                    if candidate is not None and len(candidate) > 0:
+                        N.append(candidate)
+
+            if len(N) == 0:
+                log.warning(f"No precursor candidates produced for sample {sample[0]}")
+                continue
+
+            final_data = pd.concat(N, ignore_index=True)
 
             pre_prob = self.predict_precursor(final_data)
         
             final_data['score'] = pre_prob['miRNA']
+            final_data['ml_score'] = final_data['score']
+            final_data['mirdeep2_score'] = final_data.apply(self.mirdeep2_like_score, axis=1)
 
             outputs.append(final_data)
 
             final_data.to_csv(f"{mirna_temp}/{sample[0]}_raw_miRNA.txt", sep="\t", index=False)
             
-        final = pd.concat(outputs)
+        if len(outputs) == 0:
+            log.warning("No novel miRNA candidates were detected")
+            return pd.DataFrame(), pd.DataFrame(), None, None
+
+        final = pd.concat(outputs, ignore_index=True)
 
         final_miRNA = self.filter_miRNA(final)
 
@@ -421,12 +498,16 @@ class Novel_miRNA:
 
         if self.filterCriteria == 'strict':
             
-            final_miRNA = final_miRNA[(final_miRNA['mature_status'] =='ok') &(final_miRNA['score']>=self.score)]
+            final_miRNA = self.apply_strict_filters(final_miRNA)
             final_miRNA.to_csv(os.path.join(self.outdir, "all_sample_filtered_miRNAs.txt"), sep="\t", index=False)
             mature_out = os.path.join(self.outdir,"all_sample_pooled_mature.fa")
             hairpin_out = os.path.join(self.outdir,"all_sample_pooled_hairpin.fa")
             self._write_fasta(final_miRNA,mature_out,type='raw',seq='mature')
             self._write_fasta(final_miRNA,hairpin_out,type='raw',seq='hairpin')
+
+        if final_miRNA.empty:
+            log.warning("No candidates left after filtering")
+            return pd.DataFrame(), pd.DataFrame(), None, None
             
         known_miRNAs, novel_miRNAs, known_fasta, novel_fasta = self.predict_known_miRNAs(novel_df=final_miRNA)
         

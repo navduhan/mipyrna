@@ -1,0 +1,5 @@
+study_id	study_type	organism	use_case	samples_or_runs	priority	source
+GSE13605	GEO Series	Arabidopsis thaliana	Classic AGO1-dependent small RNA benchmark with WT and ago1 libraries	6 libraries	HIGH	https://www.ncbi.nlm.nih.gov/sites/GDSbrowser?acc=GSE13605
+GSE12037	GEO Series	Arabidopsis thaliana	Classic AGO-associated small RNA benchmark panel used in early plant sRNA studies	multiple libraries	HIGH	https://mpss.danforthcenter.org/dbs/index.php?SITE=at_sRNA
+PRJNA653584	BioProject	Arabidopsis thaliana	Modern stress/time-course benchmark (high-light acclimation; Frontiers Plant Science 2020)	24 samples	HIGH	https://www.ncbi.nlm.nih.gov/bioproject/PRJNA653584
+SRR6767632-SRR6767645	SRA runs	Arabidopsis thaliana	Existing run set already used in project README example (high-light stress)	14 runs	MEDIUM	https://github.com/navduhan/mipyrna

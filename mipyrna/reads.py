@@ -95,9 +95,29 @@ class Read_process:
                             pos, ont = change.split(':')
                             gseq[int(pos)] = ont.split(">")[1]  # Convert to lowercase
                             edit[int(pos)] = "M"
-                id_parts = row.read.split()
-                db_parts = row.read.split()
-                areads.append([id_parts[0], len(row.mature), row.mature, row.chrom, int(row.start)+1, int(row.start)+len(row.mature), row.strand, mm, ''.join(edit), count, id_parts[0].split("_x")[0], int(id_parts[0].split("_x")[1])])
+                read_name = str(row.read).split()[0]
+                if "_x" in read_name:
+                    _, raw_reads = read_name.rsplit("_x", 1)
+                    try:
+                        read_count = int(raw_reads)
+                    except ValueError:
+                        read_count = 1
+                else:
+                    read_count = 1
+                start = int(row.start) + 1
+                end = start + len(row.mature)
+                areads.append([
+                    read_name,
+                    row.mature,
+                    row.chrom,
+                    row.strand,
+                    start,
+                    end,
+                    len(row.mature),
+                    count,
+                    read_count,
+                    count
+                ])
                 count += 1
 
         return key, [sample[0], sample[1], pd.DataFrame(areads, columns=['read_name', 'seq', 'name', 'strand', 'start', 'end', 'length', 'read_id', 'reads', 'align_id'])]
@@ -106,8 +126,7 @@ class Read_process:
         outaligned = {}
 
         with multiprocessing.Pool(processes=4) as pool:
-            results = tqdm(pool.starmap(self.process_sample, [(key, sample, alignType) for key, sample in samples.items()]))
-            print(results)
+            results = list(tqdm(pool.starmap(self.process_sample, [(key, sample, alignType) for key, sample in samples.items()])))
         for key, result in results:
             outaligned[key] = result
 
@@ -149,6 +168,5 @@ class Read_process:
             seq = str(Seq.Seq(seq).reverse_complement())
 
         return seq
-
 
 

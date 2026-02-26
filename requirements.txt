@@ -40,3 +40,15 @@ wheel
 openpyxl
 notebook
 tabulate
+biopython
+HTSeq
+pyfaidx
+tqdm
+forgi
+ViennaRNA
+keras
+wget
+bx-python
+scikit-learn
+adjustText
+setuptools

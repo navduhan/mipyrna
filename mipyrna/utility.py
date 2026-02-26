@@ -47,7 +47,7 @@ def read_input_file(infile, inpath, paired = False):
 
                 if not line.startswith("#") and not line.startswith("SampleName"):
                     line = line.strip()
-                    lines = re.split('\s+', line.rstrip())
+                    lines = re.split(r'\s+', line.rstrip())
 
                     if paired:
 
@@ -253,7 +253,7 @@ def check_status(job_id):
     """
     d = subprocess.check_output('squeue -j '+str(job_id), shell=True, universal_newlines=True)
 
-    data = list(re.split("\s+ ",d))
+    data = list(re.split(r"\s+ ", d))
 
     if len(data)==6:
 

@@ -148,6 +148,43 @@ Run mipyrna
 
 mipyrna -h
 
+End-to-End Workflow
+-------------------
+
+miPyRNA now provides a unified workflow command that executes the major stages in the README pipeline (QC, trimming, alignment, known/novel miRNA prediction, quantification, differential analysis, target prediction, enrichment, and report generation).
+
+```bash
+mipyrna workflow \
+  --input-file samples.txt \
+  --input-path /path/to/fastq \
+  --genome /path/to/genome.fa \
+  --species ath \
+  --species-type plants \
+  --outdir mipyrna_results \
+  --mrna-file /path/to/transcripts.fa \
+  --run-enrichment \
+  --enrichment-organism athaliana
+```
+
+Standalone commands are also available:
+
+```bash
+mipyrna targets --mirna-file novel_mature.fa --mrna-file transcripts.fa --outdir results
+mipyrna enrich --targets-file results/targets_raw/miranda_targets.tsv --organism athaliana --outdir results
+mipyrna report --outdir results
+```
+
+Benchmarking Against miRDeep2
+-----------------------------
+
+We provide a reproducible benchmark scaffold in `benchmark/` with:
+
+- curated public plant datasets (`benchmark/datasets_plant_mirna.tsv`),
+- accession-to-run metadata retrieval script (`benchmark/scripts/fetch_runinfo.sh`),
+- an execution template to run miPyRNA and miRDeep2 side-by-side (`benchmark/scripts/run_benchmark_template.sh`).
+
+See `benchmark/README.md` for the recommended initial benchmark panel and usage.
+
 
 
 Queries and Contact

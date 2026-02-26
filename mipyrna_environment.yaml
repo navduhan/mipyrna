@@ -6,23 +6,62 @@ channels:
   - r
 
 dependencies:
-  - python
+  - python=3.10
+  - pip
+  - setuptools
+  - wheel
+
+  # Core Python scientific stack
+  - numpy
+  - pandas
+  - scipy
+  - matplotlib
+  - seaborn
+  - statsmodels
+  - scikit-learn
+  - openpyxl
+  - requests
+  - tqdm
+  - psutil
+  - jinja2
+  - tabulate
+  - notebook
+
+  # Bioinformatics Python dependencies used by miPyRNA
+  - biopython
+  - pyfaidx
+  - pysam
+  - htseq
+  - bx-python
+  - forgi
+  - viennarna
+  - adjusttext
+  - keras
+  - tensorflow
+
+  # R / DE analysis
   - r-base
   - r-essentials
+  - rpy2
+  - bioconductor-deseq2
+  - bioconductor-edger
+
+  # External tools used in workflow
+  - fastqc
   - flexbar
   - trimmomatic
   - trim-galore
+  - sortmerna
   - star
   - hisat2
+  - bowtie
   - bowtie2
   - subread
-  - htseq
   - samtools
   - bamtools
   - bedtools
-  - pip
-  - matplotlib
-  - rpy2
-  - sortmerna
-  - bioconductor-deseq2
-  - bioconductor-edger
+  - ncbi-blast+
+  - mirdeep2
+  - miranda
+  - ucsc-fasomerecords
+  - wget

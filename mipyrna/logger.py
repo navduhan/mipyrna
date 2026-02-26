@@ -20,6 +20,8 @@ def MiPyRNALogger(mode, log):
     """
     logger = logging.getLogger(log)
     logger.propagate=False
+    if logger.handlers:
+        return logger
 
     # set format for logging
     logFormatter =logging.Formatter('[%(asctime)s]  %(module)s :: %(levelname)s : %(message)s',datefmt='%H:%M:%S')
@@ -27,7 +29,7 @@ def MiPyRNALogger(mode, log):
     logger.setLevel(logging.DEBUG)
     # write log in a user provided log file
     
-    fileHandler = logging.FileHandler("{}".format('mipyrna'), mode= mode)
+    fileHandler = logging.FileHandler("{}".format('mipyrna.log'), mode= mode)
 
     fileHandler.setFormatter(logFormatter)
 

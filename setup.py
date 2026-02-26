@@ -3,6 +3,13 @@ from pathlib import Path
 import tarfile
 import os
 
+
+def read_requirements(path="requirements.txt"):
+    req_file = Path(path)
+    if not req_file.exists():
+        return []
+    return [line.strip() for line in req_file.read_text().splitlines() if line.strip() and not line.startswith("#")]
+
 def install_package_data():
     package_data_dir = 'mipyrna/data'
     tarfile_path = os.path.join(package_data_dir, 'ncRNA_rfam.tar.gz')
@@ -31,13 +38,7 @@ setuptools.setup(
                     'mipyrna = mipyrna.__main__:main',
             ]
     },
-#     install_requires=[line.rstrip() for line in open("requirements.txt", "rt")],
-install_requires = ['certifi','cffi','charset-normalizer','cycler','dill','fonttools','future',
-'idna','importlib-metadata','Jinja2','kiwisolver','Markdown','MarkupSafe','matplotlib','numpy',
-'packaging','pandas','patsy','Pillow','psutil','pycparser','pyfastx','pyparsing','pysam',
-'python-dateutil','pytz','pytz-deprecation-shim','requests','scipy','seaborn','six',
-'statsmodels','tzdata','tzlocal','urllib3','waiting','zipp','wheel','openpyxl'
-],
+    install_requires=read_requirements(),
 
  classifiers=[
         "Programming Language :: Python :: 3",
