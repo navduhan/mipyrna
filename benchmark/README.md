@@ -6,6 +6,7 @@ This folder provides a reproducible benchmark framework to compare miPyRNA with 
 
 - `datasets_plant_mirna.tsv`: curated benchmark candidates with accession metadata.
 - `scripts/fetch_runinfo.sh`: resolve run-level metadata from NCBI (SRA RunInfo CSV).
+- `scripts/download_sra_fastq.sh`: download SRA runs (prefetch + fasterq-dump).
 - `scripts/download_arabidopsis_reference.sh`: download Arabidopsis TAIR10 genome/annotation/cDNA.
 - `scripts/run_benchmark_template.sh`: template benchmark runner.
 
@@ -26,6 +27,12 @@ cd benchmark
 bash scripts/fetch_runinfo.sh GSE13605 metadata
 bash scripts/fetch_runinfo.sh GSE12037 metadata
 bash scripts/fetch_runinfo.sh PRJNA653584 metadata
+```
+
+Download FASTQ files from RunInfo:
+
+```bash
+bash scripts/download_sra_fastq.sh metadata/GSE13605.runinfo.csv fastq/GSE13605 8
 ```
 
 Download Arabidopsis TAIR10 references:
