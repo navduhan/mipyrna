@@ -2,6 +2,14 @@
 
 import argparse
 import json
+from importlib.metadata import PackageNotFoundError, version
+
+
+def _version():
+    try:
+        return version("miPyRNA")
+    except PackageNotFoundError:
+        return "unknown"
 
 
 def build_parser():
@@ -12,7 +20,7 @@ def build_parser():
     parser.add_argument(
         "--version",
         action="version",
-        version="miPyRNA 0.1",
+        version=f"miPyRNA {_version()}",
     )
     parser.add_argument(
         "--check",

@@ -27,3 +27,4 @@ benchmark/results
 benchmark/fastq
 benchmark/metadata
 benchmark/references
+.ruff_cache

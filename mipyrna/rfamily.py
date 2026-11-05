@@ -9,6 +9,7 @@ import importlib.resources as ir
 import os
 import shutil
 import subprocess
+import tarfile
 
 from mipyrna import utility as mu
 from mipyrna.aligner import Bowtie_Aligner
@@ -55,7 +56,11 @@ class FilterRNAfamlies:
     
     def align_rfam(self, cpu=8,mem=20):
 
-        ncRNA_file = str(ir.files("mipyrna").joinpath("data/ncRNA_rfam.fa"))
+        ncRNA_file = os.path.join(self.outdir, "ncRNA_rfam.fa")
+
+        if not os.path.exists(ncRNA_file):
+            with tarfile.open(str(ir.files("mipyrna").joinpath("data/ncRNA_rfam.tar.gz")), "r:gz") as tar:
+                tar.extract("ncRNA_rfam.fa", self.outdir)
         
         aln = Bowtie_Aligner(ref_genome=ncRNA_file, outdir=self.outdir, slurm=self.slurm)
         

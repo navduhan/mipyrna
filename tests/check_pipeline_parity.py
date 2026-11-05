@@ -10,7 +10,7 @@ root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(root, "mipyrna"))
 sys.path.insert(0, os.path.join(root, "scripts-linux"))
 
-from features import Precursor_Features as TrainFeatures
+from features import Precursor_Features as TrainFeatures  # pyright: ignore[reportMissingImports]
 
 from mipyrna import model_store as ms
 from mipyrna.features import Precursor_Features as PkgFeatures
