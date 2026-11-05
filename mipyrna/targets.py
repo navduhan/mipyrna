@@ -1,6 +1,24 @@
-"""miRNA target prediction.
+"""miRNA Target Prediction Module
 
-Runs miranda and parses its output into a target table.
+This module runs miRanda to predict miRNA targets and parses its output into
+a table.
+
+Features:
+    - miRanda execution with parameters from an INI file
+    - Parsing of miRanda scores and energies into a TSV table
+    - Per-miRNA summary of unique targets
+    - Dry-run mode that only returns the command
+
+Configuration:
+    Parameters are read from ``param/miranda.ini`` unless a config file is
+    given. Output is written to ``targets_raw`` in the output directory.
+
+Dependencies:
+    - miranda: Must be available on PATH
+    - pandas: Result tables
+
+Classes / Functions / Exceptions:
+    - run_targets: Predict miRNA targets with miranda.
 
 :Author: Naveen Duhan
 """
@@ -20,7 +38,15 @@ log = MiPyRNALogger(mode='a', log='miRNA_target')
 
 
 def _parse_miranda_output(raw_output, parsed_output):
-    """Parse raw miranda output into a tab-separated target table."""
+    """Parse raw miranda output into a tab-separated target table.
+
+    Args:
+        raw_output (str): Path to the raw miranda output.
+        parsed_output (str): Path of the TSV file to write.
+
+    Returns:
+        pandas.DataFrame: Table with ``miRNA``, ``target_id``, ``score`` and ``energy`` columns.
+    """
     records = []
     current = {"miRNA": None, "target_id": None, "score": None, "energy": None}
     with open(raw_output) as handle:
@@ -66,7 +92,25 @@ def _parse_miranda_output(raw_output, parsed_output):
 
 
 def run_targets(miRNA_file=None, configFile=None, mRNA_file=None, slurm=False, outdir=".", dryrun=False):
-    """Predict miRNA targets with miranda and return the output paths."""
+    """Predict miRNA targets with miranda.
+
+    Args:
+        miRNA_file (str): FASTA of miRNA sequences.
+        configFile (str, optional): miranda parameter file. Defaults to the bundled ``miranda.ini``.
+        mRNA_file (str): FASTA of target mRNA sequences.
+        slurm (bool): Unused. Defaults to False.
+        outdir (str): Output directory. Defaults to the current directory.
+        dryrun (bool): Only return the command and output paths. Defaults to False.
+
+    Returns:
+        dict: With ``dryrun``, ``command``, ``raw_output`` and ``parsed_output``.
+        Otherwise ``raw_output``, ``parsed_output``, ``summary_output`` and
+        ``count_predictions``.
+
+    Raises:
+        ValueError: If ``miRNA_file`` or ``mRNA_file`` is missing.
+        RuntimeError: If miranda is not on PATH or exits with a non-zero code.
+    """
     if miRNA_file is None or mRNA_file is None:
         raise ValueError("Both miRNA_file and mRNA_file are required")
 

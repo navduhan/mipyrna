@@ -1,6 +1,23 @@
-"""Functional annotation and enrichment helpers.
+"""Functional Annotation Module
 
-Runs enrichment of target gene lists against an online annotation service.
+This module runs functional enrichment of miRNA target genes against the
+g:Profiler web service.
+
+Features:
+    - Enrichment of GO:BP, GO:MF, GO:CC and KEGG terms by default
+    - Configurable annotation sources and p-value threshold
+    - Writes an empty table when there are no target genes
+
+Configuration:
+    Input is a tab-separated targets file with a ``target_id`` column and a
+    g:Profiler organism code. Output is ``functional_annotation/enrichment_results.tsv``.
+
+Dependencies:
+    - requests: Calls the g:Profiler REST API (internet access required)
+    - pandas: Table handling
+
+Classes / Functions / Exceptions:
+    - run_enrichment: Run enrichment and write the results table.
 
 :Author: Naveen Duhan
 """
@@ -17,14 +34,24 @@ log = MiPyRNALogger(mode='a', log='annotation')
 
 
 def run_enrichment(targets_file=None, organism=None, outdir=".", sources=None, user_threshold=0.05):
-    """Run g:Profiler enrichment on the target genes and write enrichment_results.tsv.
+    """Run g:Profiler enrichment on the target genes.
 
-    :param targets_file: Tab-separated targets file with a target_id column.
-    :param organism: g:Profiler organism code, for example athaliana.
-    :param outdir: Output directory.
-    :param sources: Annotation sources. Defaults to GO:BP, GO:MF, GO:CC and KEGG.
-    :param user_threshold: P value threshold. Defaults to 0.05.
-    :returns: Dict with the results path and the number of terms.
+    Writes ``functional_annotation/enrichment_results.tsv`` in ``outdir``.
+
+    Args:
+        targets_file (str): Tab-separated targets file with a ``target_id`` column.
+        organism (str): g:Profiler organism code, for example ``athaliana``.
+        outdir (str): Output directory. Defaults to the current directory.
+        sources (list, optional): Annotation sources. Defaults to GO:BP, GO:MF, GO:CC and KEGG.
+        user_threshold (float): P-value threshold. Defaults to 0.05.
+
+    Returns:
+        dict: ``{'enrichment_results': path, 'count_terms': number of terms}``.
+
+    Raises:
+        ValueError: If ``targets_file`` or ``organism`` is missing, or the file
+            has no ``target_id`` column.
+        requests.HTTPError: If the g:Profiler request fails.
     """
     if targets_file is None:
         raise ValueError("targets_file is required")

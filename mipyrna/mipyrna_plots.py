@@ -1,8 +1,40 @@
-"""Publication-style plots for miPyRNA differential expression results.
+"""
+miPyRNA Plotting Module
 
-Provides volcano, MA, heatmap, Venn and PCA plots. All functions return a
-matplotlib figure; use :func:`savePlot` to write it to disk. Colours follow the
-Okabe-Ito colourblind-safe palette and heatmaps use perceptually uniform maps.
+This module provides publication-style plots for miPyRNA differential expression
+results. All plot functions return a matplotlib figure; use `savePlot` to write
+it to disk. Colours follow the Okabe-Ito colourblind-safe palette and heatmaps
+use perceptually uniform colour maps.
+
+Features:
+    - Volcano plot of log2 fold change against -log10 P value
+    - MA plot of log2 fold change against log2 mean count
+    - Heatmaps of top and bottom miRNAs by fold change or counts
+    - Venn diagrams for two to four comparisons, with up/down or total counts
+    - PCA plot of normalized counts with non-overlapping sample labels
+    - Vector-friendly output (editable PDF/SVG text) via a shared style
+
+Configuration:
+    Inputs are pandas DataFrames of differential expression results, raw or normalized counts, or a filtered DEG Excel file with one sheet per comparison.
+    Thresholds, colours, sizes and fonts are set through function arguments.
+    Figures are returned, and written only by `savePlot`.
+
+Dependencies:
+    - matplotlib: Figure creation
+    - seaborn: Heatmaps and colour palettes
+    - pandas / numpy: Data handling
+    - scikit-learn: PCA
+    - adjustText: Label placement in the PCA plot
+
+Classes / Functions / Exceptions:
+    - savePlot: Save a figure to disk.
+    - plotVolcano: Volcano plot.
+    - plotMA: MA plot.
+    - plotHeatmap: Fold change or counts heatmap.
+    - plotVenn: Venn diagram of differentially expressed miRNAs.
+    - pcaPlot: PCA plot of normalized counts.
+    - _offset_spines, _deg_state, _scatter_by_state: Shared plotting helpers.
+    - _insertEllipse, _insertText, _mature_idrateCollection: Venn diagram helpers.
 
 :Author: Naveen Duhan
 """
@@ -41,25 +73,57 @@ def savePlot(fig, path, dpi=300):
     """
     Save a figure for publication. Use a .pdf or .svg path for vector output.
 
-    :param fig: Figure returned by one of the plot functions.
-    :param path: Output file path.
-    :param dpi: Resolution for raster formats. Defaults to 300.
+    Args:
+        fig (matplotlib.figure.Figure): Figure returned by one of the plot functions.
+        path (str): Output file path.
+        dpi (int): Resolution for raster formats. Defaults to 300.
     """
 
     fig.savefig(path, dpi=dpi, bbox_inches='tight', facecolor='white')
 
 
 def _offset_spines(ax, offset=6):
+    """
+    Move the left and bottom axes spines outward.
+
+    Args:
+        ax (matplotlib.axes.Axes): Axes to adjust.
+        offset (int): Offset in points. Defaults to 6.
+    """
     ax.spines['left'].set_position(('outward', offset))
     ax.spines['bottom'].set_position(('outward', offset))
 
 
 def _deg_state(lfc, significant, threshold):
+    """
+    Classify each miRNA as down, not significant or up.
+
+    Args:
+        lfc (numpy.ndarray): Log2 fold changes.
+        significant (numpy.ndarray): Boolean mask of values passing the P value or FDR cutoff.
+        threshold (float): Absolute log2 fold change threshold.
+
+    Returns:
+        numpy.ndarray: Integer states, 0 for down, 1 for not significant and 2 for up.
+    """
     # 0 = down, 1 = not significant, 2 = up
     return np.where(significant & (lfc >= threshold), 2, np.where(significant & (lfc <= -threshold), 0, 1))
 
 
 def _scatter_by_state(ax, x, y, state, color, dotsize, markerType, alpha):
+    """
+    Scatter points coloured by differential expression state, with counts in the legend labels.
+
+    Args:
+        ax (matplotlib.axes.Axes): Axes to draw on.
+        x (numpy.ndarray): X coordinates.
+        y (numpy.ndarray): Y coordinates.
+        state (numpy.ndarray): States from `_deg_state`.
+        color (tuple): Colors for (down, not significant, up).
+        dotsize (float): Marker size.
+        markerType (str): Marker shape.
+        alpha (float): Transparency of points.
+    """
     names = ['Down', 'Not significant', 'Up']
     for i in (1, 0, 2):
         mask = state == i
@@ -71,18 +135,23 @@ def plotVolcano(degDF=None, comp=None, FOLD=2, pValue=0.05, color=DEG_COLORS, di
     """
     Plot a volcano plot of log2 fold change against -log10 P value.
 
-    :param degDF: All mature_id expression file.
-    :param comp: Sample comparison.
-    :param FOLD: Fold change threshold. Defaults to 2.
-    :param pValue: P value threshold. Defaults to 0.05.
-    :param color: Colors for (down, not significant, up).
-    :param dim: Dimensions of the plot. Defaults to (8, 5).
-    :param font: Axis label font size. Defaults to 14.
-    :param dotsize: Dotsize on plot. Defaults to 10.
-    :param markerType: Marker shape. Defaults to 'o'.
-    :param alpha: Transparency of points. Defaults to 0.5.
-    :returns: matplotlib figure.
-    :raises ValueError: If the comparison columns are missing or hold no data.
+    Args:
+        degDF (pandas.DataFrame): All mature_id expression table with logFC(comp) and pvalue(comp) columns.
+        comp (str): Sample comparison.
+        FOLD (float): Fold change threshold. Defaults to 2.
+        pValue (float): P value threshold. Defaults to 0.05.
+        color (tuple): Colors for (down, not significant, up).
+        dim (tuple): Dimensions of the plot. Defaults to (8, 5).
+        font (int): Axis label font size. Defaults to 14.
+        dotsize (float): Dot size on plot. Defaults to 10.
+        markerType (str): Marker shape. Defaults to 'o'.
+        alpha (float): Transparency of points. Defaults to 0.5.
+
+    Returns:
+        matplotlib.figure.Figure: The volcano plot.
+
+    Raises:
+        ValueError: If degDF or comp is missing, the comparison columns are absent, or no data remain.
     """
 
     if degDF is None or comp is None:
@@ -125,19 +194,24 @@ def plotMA(degDF=None, countDF=None, comp=None, FOLD=2, FDR=0.05, color=DEG_COLO
     """
     Plot an MA plot of log2 fold change against log2 mean count.
 
-    :param degDF: All mature_id expression file.
-    :param countDF: Raw counts file with one column per sample.
-    :param comp: Sample comparison, written as 'group1-group2'.
-    :param FOLD: Fold change threshold. Defaults to 2.
-    :param FDR: FDR threshold. Defaults to 0.05.
-    :param color: Colors for (down, not significant, up).
-    :param font: Axis label font size. Defaults to 14.
-    :param dim: Dimensions of the plot. Defaults to (8, 5).
-    :param dotsize: Dotsize on plot. Defaults to 8.
-    :param markerType: Marker shape. Defaults to 'o'.
-    :param alpha: Transparency of points. Defaults to 0.5.
-    :returns: matplotlib figure.
-    :raises ValueError: If the comparison columns are missing or hold no data.
+    Args:
+        degDF (pandas.DataFrame): All mature_id expression table with logFC(comp) and FDR(comp) columns.
+        countDF (pandas.DataFrame): Raw counts with one column per sample.
+        comp (str): Sample comparison, written as 'group1-group2'.
+        FOLD (float): Fold change threshold. Defaults to 2.
+        FDR (float): FDR threshold. Defaults to 0.05.
+        color (tuple): Colors for (down, not significant, up).
+        font (int): Axis label font size. Defaults to 14.
+        dim (tuple): Dimensions of the plot. Defaults to (8, 5).
+        dotsize (float): Dot size on plot. Defaults to 8.
+        markerType (str): Marker shape. Defaults to 'o'.
+        alpha (float): Transparency of points. Defaults to 0.5.
+
+    Returns:
+        matplotlib.figure.Figure: The MA plot.
+
+    Raises:
+        ValueError: If degDF, countDF or comp is missing, the comparison columns are absent, or no data remain.
     """
 
     if degDF is None or countDF is None or comp is None:
@@ -186,14 +260,19 @@ def plotHeatmap(degDF=None, combinations=None, num=50, figdim=(12, 10), extraCol
     Fold change heatmaps use a diverging map centred at zero. Count heatmaps
     show log2(count + 1) on a perceptually uniform map.
 
-    :param degDF: All mature_id expression file or Counts file.
-    :param combinations: All sample combinations.
-    :param num: Total number of mature_ids to plot. Default is 50 (25 up and 25 down).
-    :param figdim: Figure dimensions.
-    :param extraColumns: Drop the 'Name' and 'Description' columns first.
-    :param type: Heatmap to create on counts/degs.
-    :returns: Tuple of (figure, axes).
-    :raises ValueError: If type is not 'degs' or 'counts'.
+    Args:
+        degDF (pandas.DataFrame): All mature_id expression table or counts table.
+        combinations (list): All sample combinations.
+        num (int): Total number of mature_ids to plot. Defaults to 50 (25 up and 25 down).
+        figdim (tuple): Figure dimensions. Defaults to (12, 10).
+        extraColumns (bool): Drop the 'Name' and 'Description' columns first. Defaults to False.
+        type (str): Heatmap to create, 'counts' or 'degs'. Defaults to 'counts'.
+
+    Returns:
+        tuple: The matplotlib figure and axes.
+
+    Raises:
+        ValueError: If degDF or combinations is missing, or type is not 'degs' or 'counts'.
     """
 
     if degDF is None or combinations is None:
@@ -234,17 +313,52 @@ def plotHeatmap(degDF=None, combinations=None, num=50, figdim=(12, 10), extraCol
 
 
 def _insertEllipse(ax, x, y, w, h, a, fillcolor):
-    """Add a filled ellipse to a Venn diagram."""
+    """
+    Add a filled ellipse to a Venn diagram.
+
+    Args:
+        ax (matplotlib.axes.Axes): Axes to draw on.
+        x (float): Ellipse centre x.
+        y (float): Ellipse centre y.
+        w (float): Ellipse width.
+        h (float): Ellipse height.
+        a (float): Rotation angle in degrees.
+        fillcolor (tuple): RGBA fill color.
+    """
     ax.add_patch(patches.Ellipse(xy=(x, y), width=w, height=h, angle=a, linewidth=2, color=fillcolor))
 
 
 def _insertText(ax, x, y, text, fontsize=None, col="black", ha="center", va="center", fontweight=600):
-    """Add a text label to a Venn diagram."""
+    """
+    Add a text label to a Venn diagram.
+
+    Args:
+        ax (matplotlib.axes.Axes): Axes to draw on.
+        x (float): Text x position.
+        y (float): Text y position.
+        text (str): Label text.
+        fontsize (int, optional): Font size.
+        col (str): Text color. Defaults to "black".
+        ha (str): Horizontal alignment. Defaults to "center".
+        va (str): Vertical alignment. Defaults to "center".
+        fontweight (int): Font weight. Defaults to 600.
+    """
     ax.text(x, y, text, horizontalalignment=ha, verticalalignment=va, fontsize=fontsize, fontweight=fontweight, color=col)
 
 
 def _mature_idrateCollection(data=None):
-    """Return the set of mature_ids in each region of a Venn diagram, keyed by membership bits."""
+    """
+    Return the set of mature_ids in each region of a Venn diagram, keyed by membership bits.
+
+    Args:
+        data (list): One iterable of mature_ids per comparison.
+
+    Returns:
+        dict: Binary membership string (one bit per comparison) mapped to the set of mature_ids in that region.
+
+    Raises:
+        ValueError: If data is not provided.
+    """
     if data is None:
         raise ValueError("data is required")
 
@@ -288,15 +402,20 @@ def plotVenn(DEGFile=None, FOLD=2, comparisons=None, degLabel="", fontsize=14, f
     """
     Plot a Venn diagram of differentially expressed mature_ids across 2-4 comparisons.
 
-    :param DEGFile: Filtered deg excel file containing samples sheet-wise.
-    :param FOLD: Fold change threshold. Defaults to 2.
-    :param comparisons: Comparison list with 2 to 4 entries.
-    :param degLabel: "total" for one count per region, otherwise up (blue) and down (orange) counts.
-    :param fontsize: Font size. Defaults to 14.
-    :param figsize: Figure size. Defaults to (12, 12).
-    :param dpi: Figure DPI resolution. Defaults to 300.
-    :returns: matplotlib figure.
-    :raises ValueError: If the number of comparisons is not between 2 and 4.
+    Args:
+        DEGFile (str): Filtered DEG Excel file with one sheet per comparison.
+        FOLD (float): Fold change threshold. Defaults to 2.
+        comparisons (list): Comparison names, 2 to 4 entries.
+        degLabel (str): "total" for one count per region, otherwise up (blue) and down (orange) counts.
+        fontsize (int): Font size. Defaults to 14.
+        figsize (tuple): Figure size. Defaults to (12, 12).
+        dpi (int): Figure DPI resolution. Defaults to 300.
+
+    Returns:
+        matplotlib.figure.Figure: The Venn diagram.
+
+    Raises:
+        ValueError: If DEGFile or comparisons is missing, or the number of comparisons is not between 2 and 4.
     """
 
     if DEGFile is None or comparisons is None:
@@ -354,12 +473,18 @@ def pcaPlot(ncountdf=None, legends=False, fontsize=14, figsize=(12, 12), dpi=300
 
     Axis labels give the percentage of variance explained by each component.
 
-    :param ncountdf: Normalized counts file with mature_ids as rows and samples as columns.
-    :param legends: Show a legend of sample names. Defaults to False.
-    :param fontsize: Font size. Defaults to 14.
-    :param figsize: Figure size. Defaults to (12, 12).
-    :param dpi: Figure DPI resolution. Defaults to 300.
-    :returns: matplotlib figure.
+    Args:
+        ncountdf (pandas.DataFrame): Normalized counts with mature_ids as rows and samples as columns.
+        legends (bool): Show a legend of sample names. Defaults to False.
+        fontsize (int): Font size. Defaults to 14.
+        figsize (tuple): Figure size. Defaults to (12, 12).
+        dpi (int): Figure DPI resolution. Defaults to 300.
+
+    Returns:
+        matplotlib.figure.Figure: The PCA plot.
+
+    Raises:
+        ValueError: If ncountdf is not provided.
     """
 
     if ncountdf is None:

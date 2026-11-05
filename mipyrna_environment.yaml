@@ -64,4 +64,3 @@ dependencies:
   - mirdeep2
   - miranda
   - ucsc-fasomerecords
-  - wget

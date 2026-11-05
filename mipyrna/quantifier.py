@@ -1,6 +1,24 @@
-"""Quantification of miRNAs for differential expression.
+"""miRNA Quantification Module
 
-Counts aligned reads per miRNA and merges them into a count matrix.
+This module aligns reads to miRNA sequences and builds the raw count matrix
+used for differential expression.
+
+Features:
+    - Alignment of collapsed reads to known and novel miRNAs with Bowtie
+    - Counting of read abundance per miRNA, restricted to reads starting at position 1 or earlier
+    - Merged count matrix across samples written to Excel
+
+Configuration:
+    Inputs are the miRNA FASTA, the collapsed read samples and the output
+    directory. Output is ``Raw_read_counts.xlsx`` and a ``quant_align`` directory.
+
+Dependencies:
+    - HTSeq: SAM parsing
+    - pandas: Count tables
+    - Bowtie via mipyrna.aligner
+
+Classes / Functions / Exceptions:
+    - Quantifier: Count reads per miRNA across samples.
 
 :Author: Naveen Duhan
 """
@@ -19,7 +37,14 @@ class Quantifier:
     """Count reads per miRNA across samples."""
     
     def __init__(self, sRNA_file=None, samples=None, slurm=False, outdir="."):
-        """Set the miRNA FASTA, samples and output directory."""
+        """Initialize the quantifier.
+
+        Args:
+            sRNA_file (str): FASTA of miRNA sequences to quantify.
+            samples (dict): Sample name to ``[group, replicate, collapsed reads path]``.
+            slurm (bool): Use SLURM for alignment. Defaults to False.
+            outdir (str): Output directory. Defaults to the current directory.
+        """
         
         self.sRNA = sRNA_file
         self.samples = samples
@@ -28,7 +53,16 @@ class Quantifier:
         
     
     def _align_reads_against_miRNAs(self, cpu, mem, output):
-        """Align the sample reads to the miRNA sequences."""
+        """Align the sample reads to the miRNA sequences.
+
+        Args:
+            cpu (int): Threads for alignment.
+            mem (int): Memory for alignment.
+            output (str): Output directory for the index and alignments.
+
+        Returns:
+            dict: Sample name to ``[group, replicate, SAM path]``.
+        """
         
         aln = Bowtie_Aligner(ref_genome=self.sRNA, outdir=output, slurm=self.slurm)
         aln.build_index()
@@ -38,7 +72,16 @@ class Quantifier:
         return results
     
     def _get_counts(self, aligned_files):
-        """Sum aligned read counts per miRNA for each sample."""
+        """Sum aligned read counts per miRNA for each sample.
+
+        Read abundance is taken from the ``x<count>`` suffix of the collapsed read name.
+
+        Args:
+            aligned_files (dict): Sample name to ``[group, replicate, SAM path]``.
+
+        Returns:
+            dict: Sample name to ``[group, replicate, counts DataFrame]``.
+        """
         all_counts = {}
         for k, sample in aligned_files.items():
             
@@ -65,7 +108,15 @@ class Quantifier:
     
 
     def quantify_expression(self, cpu=8, mem=20):
-        """Align, count and write the merged raw count matrix to Raw_read_counts.xlsx."""
+        """Align, count and write the merged raw count matrix to ``Raw_read_counts.xlsx``.
+
+        Args:
+            cpu (int): Threads for alignment. Defaults to 8.
+            mem (int): Memory for alignment. Defaults to 20.
+
+        Returns:
+            pandas.DataFrame: Integer counts with a ``mature_id`` column and one column per sample.
+        """
         
         aligdir = mu.make_directory(os.path.join(self.outdir, "quant_align"))
         

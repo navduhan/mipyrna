@@ -1,8 +1,29 @@
-"""Structure and sequence features of miRNA precursors.
+"""
+Precursor Structure and Sequence Features
 
-Defines Precursor_Features, which folds a precursor with ViennaRNA and builds
-the feature dictionary scored by the bundled model. Must stay identical to the
-training code so features match what the models were trained on.
+This module computes the structure and sequence features of miRNA precursors.
+It folds a precursor with ViennaRNA and builds the feature dictionary scored by
+the bundled model. It must stay identical to the training code so features match
+what the models were trained on.
+
+Features:
+    - Secondary structure prediction (MFE) with ViennaRNA and bulge graph via forgi
+    - Stem, loop and bulge (interior loop) descriptors
+    - GC content and mono-, di- and trinucleotide composition
+    - Middle-base and dot-bracket triplet counts (32 columns)
+    - Records why a precursor was dropped or a feature was zero-filled
+
+Configuration:
+    Input is an RNA (or DNA) precursor sequence; T is converted to U. Output is a
+    feature dictionary from ``generate_features`` (None if the precursor has no usable
+    structure). TRIPLET_BASES and TRIPLET_STRUCTURES define the triplet encoding.
+
+Dependencies:
+    - ViennaRNA (``RNA``): Folding
+    - forgi: Bulge graph and stem/loop iteration
+
+Classes / Functions / Exceptions:
+    - Precursor_Features: Builds structure and sequence features for one precursor.
 
 :Author: Naveen Duhan
 """
@@ -22,12 +43,28 @@ TRIPLET_STRUCTURES = ('(((', '((.', '(..', '(.(',
 
 
 class Precursor_Features:
+    """Structure and sequence features of one miRNA precursor.
+
+    Attributes:
+        seq: Sequence with T replaced by U.
+        drop_reason: Why the precursor was skipped, if it was.
+        fallback_note: Note recorded when loop features were zero-filled.
+        buldge_graph: forgi bulge graph, or None if folding failed.
+        structure: Dot-bracket structure.
+        mfe: Minimum free energy.
+    """
 
     def __init__(self, sequence: str | None = None):
-        """Feature Generation Class
+        """Fold the sequence and store its structure, MFE and bulge graph.
+
+        If structure prediction fails the failure is stored in ``drop_reason``
+        instead of being raised.
 
         Args:
-            sequence (str | None, optional): RNA sequence. Defaults to None.
+            sequence: RNA sequence.
+
+        Raises:
+            ValueError: If no sequence is given.
         """
 
         if sequence is None:
@@ -59,7 +96,14 @@ class Precursor_Features:
 
 
     def _require_bulge_graph(self) -> fgb.BulgeGraph:
-        """Return the bulge graph, raising if structure prediction failed."""
+        """Return the bulge graph, raising if structure prediction failed.
+
+        Returns:
+            The forgi bulge graph.
+
+        Raises:
+            RuntimeError: If no bulge graph was produced.
+        """
         if self.buldge_graph is None:
             raise RuntimeError("structure prediction did not produce a bulge graph")
 
@@ -67,7 +111,11 @@ class Precursor_Features:
 
 
     def get_buldge_graph(self):
-        """Fold the sequence and return its structure, MFE and bulge graph."""
+        """Fold the sequence and return its structure, MFE and bulge graph.
+
+        Returns:
+            Dictionary with keys ``structure``, ``mfe`` and ``bulge_graph``.
+        """
 
         pstructure, pmfe = RNA.fold(self.seq)
 
@@ -76,7 +124,14 @@ class Precursor_Features:
         return {'structure': pstructure, 'mfe': pmfe, 'bulge_graph': bulge_graph}
 
     def find_biggest_stem(self):
-        """Return the length of the longest stem."""
+        """Return the length of the longest stem.
+
+        Returns:
+            Length of the longest stem (-1 if there are no stems).
+
+        Raises:
+            RuntimeError: If no bulge graph is available.
+        """
 
         graph = self._require_bulge_graph()
 
@@ -91,7 +146,15 @@ class Precursor_Features:
         return big_stem[0]
 
     def find_stem_pairs(self):
-        """Return the base pairs of all stems and their count."""
+        """Return the base pairs of all stems and their count.
+
+        Returns:
+            Dictionary with ``stem_pairs`` (list of base tuples) and ``stem_length``
+            (number of pairs).
+
+        Raises:
+            RuntimeError: If no bulge graph is available.
+        """
 
         # forgi >= 2.0 returns bg.seq as a 1-based Sequence object, and
         # stem_bp_iterator() yields 1-based positions. Convert once to a plain
@@ -111,7 +174,12 @@ class Precursor_Features:
         return {'stem_pairs': stem_pairs, 'stem_length': len(stem_pairs)}
 
     def find_matched_stem(self):
-        """Flag each stem pair as Watson-Crick matched or not, and count the mismatches."""
+        """Flag each stem pair as Watson-Crick matched or not, and count the mismatches.
+
+        Returns:
+            Dictionary with ``matched_stem`` (list of booleans) and ``mismatched_stem``
+            (number of unmatched pairs).
+        """
 
         base_pairs = {'A': 'U', 'T': 'A', 'U': 'A', 'G': 'C', 'C': 'G', 'R': 'R','K': 'K','Y': 'Y', 'S': 'S', 'M': 'M', 'W': 'W', 'H': 'H', 'B': 'B', 'V': 'V', 'D': 'D', 'N': 'N'}
         matched_stem = []
@@ -129,7 +197,13 @@ class Precursor_Features:
         return {'matched_stem': matched_stem, 'mismatched_stem': matched_stem.count(False)}
 
     def find_loops(self):
-        """Return the hairpin loop count, length and GC percentage; zero-filled if unavailable."""
+        """Return the hairpin loop count, length and GC percentage; zero-filled if unavailable.
+
+        On failure the values are zero and the reason is stored in ``fallback_note``.
+
+        Returns:
+            Dictionary with ``loop_gc``, ``total_loops`` and ``loop_length``.
+        """
 
         try:
             graph = self._require_bulge_graph()
@@ -158,7 +232,15 @@ class Precursor_Features:
         return {'loop_gc': loop_gc, 'total_loops': loops, 'loop_length': loop_length}
 
     def find_bulges(self):
-        """Return interior loop (bulge) counts, the longest, and symmetric and asymmetric counts."""
+        """Return interior loop (bulge) counts, the longest, and symmetric and asymmetric counts.
+
+        Returns:
+            Dictionary with ``bulges`` (dimensions of each interior loop), ``total``,
+            ``longest_bulge``, ``symmetric_bulge`` and ``asymmetric_bulge``.
+
+        Raises:
+            RuntimeError: If no bulge graph is available.
+        """
 
         graph = self._require_bulge_graph()
 
@@ -185,7 +267,11 @@ class Precursor_Features:
         return {'bulges': bulges, 'total': total_bulges, 'longest_bulge': longest_bulge, 'symmetric_bulge': symmetric_bulge, 'asymmetric_bulge': asymmetric_bulge}
 
     def calculate_GC(self):
-        """Return the GC percentage of the sequence."""
+        """Return the GC percentage of the sequence.
+
+        Returns:
+            GC percentage (0 for an empty sequence).
+        """
 
         GC_count = sum(1 for x in self.seq if x in ['G', 'C'])
 
@@ -196,7 +282,11 @@ class Precursor_Features:
         return float(GC_count) / len(self.seq) * 100
 
     def generate_nucleotide_composition(self):
-        """Return the percentage of each nucleotide."""
+        """Return the percentage of each nucleotide.
+
+        Returns:
+            Dictionary mapping A, C, U and G to their percentage in the sequence.
+        """
 
         nuc = ['A', 'C', 'U', 'G']
 
@@ -209,7 +299,11 @@ class Precursor_Features:
         return nuc_comp
 
     def generate_dinucleotide_composition(self):
-        """Return the percentage of each dinucleotide."""
+        """Return the percentage of each dinucleotide.
+
+        Returns:
+            Dictionary mapping each of the 16 dinucleotides to its percentage.
+        """
 
         N = len(self.seq)
 
@@ -230,7 +324,11 @@ class Precursor_Features:
         return dpc
 
     def generate_trinucleotide_composition(self):
-        """Return the percentage of each trinucleotide."""
+        """Return the percentage of each trinucleotide.
+
+        Returns:
+            Dictionary mapping each of the 64 trinucleotides to its percentage.
+        """
 
         N = len(self.seq)
 
@@ -253,7 +351,16 @@ class Precursor_Features:
         return tpc
 
     def generate_triplets(self):
-        """Count middle-base and dot-bracket triplets (4 bases x 8 structure patterns)."""
+        """Count middle-base and dot-bracket triplets (4 bases x 8 structure patterns).
+
+        Paired positions are treated alike (``)`` is replaced by ``(``) before counting.
+
+        Returns:
+            Dictionary mapping each of the 32 base and structure combinations to its count.
+
+        Raises:
+            RuntimeError: If no dot-bracket structure is available.
+        """
 
         structure_string = list(TRIPLET_STRUCTURES)
 
@@ -285,7 +392,14 @@ class Precursor_Features:
         return structure_triplets
 
     def generate_features(self):
-        """Return the full feature dictionary, or None if the precursor has no usable structure."""
+        """Return the full feature dictionary, or None if the precursor has no usable structure.
+
+        A precursor is dropped (None) if folding failed or it has fewer than two stem
+        pairs; the reason is stored in ``drop_reason``.
+
+        Returns:
+            Dictionary of structure, composition and triplet features, or None.
+        """
 
         nfeatures = {}
 

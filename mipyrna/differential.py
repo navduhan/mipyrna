@@ -1,6 +1,27 @@
-"""Differential expression of miRNAs from raw read counts.
+"""Differential Expression Module
 
-Runs DESeq2 through rpy2 and writes normalized counts, DEG tables and plots.
+This module runs differential expression analysis of miRNAs from raw read
+counts using R packages through rpy2, and filters the results.
+
+Features:
+    - DESeq2 analysis for all or per-comparison subsets of samples
+    - edgeR analysis with or without replicates
+    - Filtering of DEGs by FDR and fold change
+    - Stacked bar plot of up- and down-regulated miRNAs per comparison
+
+Configuration:
+    Inputs are a count DataFrame, a target table with a ``sample`` column
+    and a list of comparisons written as ``"A-B"``.
+
+Dependencies:
+    - R with DESeq2, edgeR and limma
+    - rpy2: Python to R bridge
+    - pandas, numpy, matplotlib
+
+Classes / Functions / Exceptions:
+    - runDESeq2: Differential expression with DESeq2.
+    - run_edgeR: Differential expression with edgeR.
+    - degFilter: Filter DEGs and summarize them.
 
 :Author: Naveen Duhan
 """
@@ -27,34 +48,27 @@ r: Any = robjects.r
 
 to_dataframe = r('function(x) data.frame(x)')
 
-numpy2ri.activate()
-
-
 def runDESeq2(countDF=None, targetFile=None, design='sample',combination=None,  mirna_column='mature_id',  mmg =False, subset=False, lib=None):
-    """
-    This function is a wrapper to DESeq2 package in R for differeantial expression analysis from raw read counts.
+    """Run DESeq2 differential expression analysis on raw read counts.
 
-    :param countFile: Raw read count file. 
-    
-    :param targetFile: Tab-delimited target file with replication and sample name
+    Args:
+        countDF (pandas.DataFrame): Raw counts with a miRNA ID column and one column per sample.
+        targetFile (pandas.DataFrame): Target table with a ``sample`` column.
+        design (str): Design column used in the formula and contrasts. Defaults to ``'sample'``.
+        combination (list): Comparisons written as ``"A-B"``.
+        mirna_column (str): Name of the miRNA ID column. Defaults to ``'mature_id'``.
+        mmg (bool): Unused. Defaults to False.
+        subset (bool): Fit a separate model per comparison using only its samples. Defaults to False.
+        lib (str, optional): R library path containing DESeq2.
 
-    :param design: [description]. Defaults to None.
+    Returns:
+        pandas.DataFrame: miRNA IDs with ``baseMean``, ``logFC``, ``lfcSE``,
+        ``stat``, ``pvalue`` and ``FDR`` columns for each comparison, suffixed
+        with ``(comparison)``.
 
-    :param combination: Comparison list contaning samples to compare.
-
-    :param gene_column: First column in raw read count file. Defaults to 'Gene'.
-
-    :param mmg: True if raw read counts are from multimapped gene groups.
-
-    :param subset: If runDESeq2 subset raw read count according to comparison.
-
-    :param lib: library path of DESeq2 to use.
-
-    :returns: DataFrame
-
-    :rtype: A datafram containing all gene differantial expression in all combinations.
-        
-
+    Raises:
+        ValueError: If ``countDF``, ``targetFile`` or ``combination`` is None.
+        Exception: If DESeq2 cannot be imported.
     """
     if countDF is None or targetFile is None or combination is None:
         raise ValueError("countDF, targetFile and combination are required")
@@ -86,7 +100,7 @@ def runDESeq2(countDF=None, targetFile=None, design='sample',combination=None,  
 
             subTF = targetFile[targetFile['sample'].str.contains(f'{c1}|{c2}')] # Subset the target data for one combination
 
-            with localconverter(get_conversion() + pandas2ri.converter):
+            with localconverter(get_conversion() + pandas2ri.converter + numpy2ri.converter):
 
                 count_matrix = py2rpy(subDF)
 
@@ -102,7 +116,7 @@ def runDESeq2(countDF=None, targetFile=None, design='sample',combination=None,  
 
         else:
 
-            with localconverter(get_conversion() + pandas2ri.converter):
+            with localconverter(get_conversion() + pandas2ri.converter + numpy2ri.converter):
 
                 count_matrix = py2rpy(countDF)
 
@@ -131,7 +145,7 @@ def runDESeq2(countDF=None, targetFile=None, design='sample',combination=None,  
 
             result=to_dataframe(result)
 
-            with localconverter(get_conversion() + pandas2ri.converter):
+            with localconverter(get_conversion() + pandas2ri.converter + numpy2ri.converter):
 
                 result = robjects.conversion.rpy2py(result)
 
@@ -152,32 +166,27 @@ def runDESeq2(countDF=None, targetFile=None, design='sample',combination=None,  
     return deseq_results
 
 def run_edgeR(countDF=None, targetFile=None, combination=None,  mirna_column='mature_id',  mmg=False, subset=False, replicate=True, bcv= 0.4, lib=None):
-    """
-    This function is a wrapper to edgeR package in R for differeantial expression analysis from raw read counts.
+    """Run edgeR differential expression analysis on raw read counts.
 
-    :param countFile: Raw read count file. 
-    
-    :param targetFile: Tab-delimited target file with replication and sample name
+    Args:
+        countDF (pandas.DataFrame): Raw counts with a miRNA ID column and one column per sample.
+        targetFile (pandas.DataFrame): Target table with a ``sample`` column.
+        combination (list): Comparisons written as ``"A-B"``.
+        mirna_column (str): Name of the miRNA ID column. Defaults to ``'mature_id'``.
+        mmg (bool): Unused. Defaults to False.
+        subset (bool): Fit a separate model per comparison using only its samples. Defaults to False.
+        replicate (bool): False if there are no replicates, in which case ``bcv`` is used. Defaults to True.
+        bcv (float): Biological coefficient of variation used without replicates. Defaults to 0.4.
+        lib (str, optional): R library path containing edgeR and limma.
 
-    :param design: [description]. Defaults to None.
+    Returns:
+        pandas.DataFrame: miRNA IDs with ``logFC``, ``logCPM``, ``LR``,
+        ``pvalue`` and ``FDR`` columns for each comparison, suffixed with
+        ``(comparison)``.
 
-    :param combination: Comparison list contaning samples to compare.
-
-    :param gene_column: First column in raw read count file. Defaults to 'Gene'.
-
-    :param mmg: True if raw read counts are from multimapped gene groups.
-
-    :param subset: If runDESeq2 subset raw read count according to comparison.
-
-    :param replicate: False if there are no replicates.
-
-    :param bcv:  Biological coefficient of variation if there are no replicate.
-
-    :param lib: library path of DESeq2 to use.
-
-    :returns: DataFrame
-
-    :rtype: A datafram containing all gene differantial expression in all combinations.
+    Raises:
+        ValueError: If ``countDF``, ``targetFile`` or ``combination`` is None.
+        Exception: If edgeR or limma cannot be imported.
     """
     if countDF is None or targetFile is None or combination is None:
         raise ValueError("countDF, targetFile and combination are required")
@@ -215,7 +224,7 @@ def run_edgeR(countDF=None, targetFile=None, combination=None,  mirna_column='ma
 
             groups = subTF['sample']
 
-            with localconverter(get_conversion() + pandas2ri.converter):
+            with localconverter(get_conversion() + pandas2ri.converter + numpy2ri.converter):
 
                 count_matrix = py2rpy(countDF)
 
@@ -257,7 +266,7 @@ def run_edgeR(countDF=None, targetFile=None, combination=None,  mirna_column='ma
 
             groups = targetFile['sample']
 
-            with localconverter(get_conversion() + pandas2ri.converter):
+            with localconverter(get_conversion() + pandas2ri.converter + numpy2ri.converter):
 
                 count_matrix = py2rpy(countDF)
 
@@ -309,7 +318,7 @@ def run_edgeR(countDF=None, targetFile=None, combination=None,  mirna_column='ma
             
             result=to_dataframe(deg)
 
-            with localconverter(robjects.default_converter + pandas2ri.converter):
+            with localconverter(robjects.default_converter + pandas2ri.converter + numpy2ri.converter):
 
                 result = robjects.conversion.rpy2py(result)
             
@@ -328,18 +337,25 @@ def run_edgeR(countDF=None, targetFile=None, combination=None,  mirna_column='ma
     return edgeR_results
 
 def degFilter(degDF=None, CompareList=None, FDR=0.05, FOLD=2, plot=True, figsize=(10,6),text_size=14, replicate=True):
-    """
-    This function filter all gene expression file based on given FOLD and FDR
+    """Filter differential expression results by fold change and FDR.
 
-    :param degDF: A datafram containing all gene differantial expression in all combinations.
+    Args:
+        degDF (pandas.DataFrame): Results of all comparisons with a ``mature_id`` column.
+        CompareList (list): Comparison names.
+        FDR (float): FDR cutoff, applied only when ``replicate`` is True. Defaults to 0.05.
+        FOLD (float): Fold change cutoff; its log2 is used. Defaults to 2.
+        plot (bool): Draw a bar plot of DEGs per comparison. Defaults to True.
+        figsize (tuple): Unused. Defaults to (10, 6).
+        text_size (int): Font size of the plot text. Defaults to 14.
+        replicate (bool): True if the data have replicates and an FDR is available. Defaults to True.
 
-    :param CompareList: A list of all the sample comparison.
+    Returns:
+        dict: ``summary`` (DEG counts per comparison), ``filtered``,
+        ``filteredup`` and ``filtereddown`` (DataFrames per comparison) and
+        ``plot`` (matplotlib figure or None).
 
-    :param FDR: False Discovery Rate for filtering DEGs. Defaults to 0.05.
-
-    :param FOLD: Fold change value. The log2 of the value will be calculated. Defaults to 2.
-
-    :param plot: True if want to plot DEGs per sample on barplot. Defaults to True.
+    Raises:
+        ValueError: If ``degDF`` or ``CompareList`` is None.
     """
     if degDF is None or CompareList is None:
         raise ValueError("degDF and CompareList are required")

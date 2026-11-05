@@ -43,7 +43,6 @@ biopython
 HTSeq
 pyfaidx
 tqdm
-wget
 bx-python
 scikit-learn
 adjustText

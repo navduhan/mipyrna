@@ -1,15 +1,29 @@
-"""Removal of non-coding RNA families from processed reads.
+"""Rfam Filtering Module
 
-Aligns reads against the bundled Rfam ncRNA sequences (extracted into the
-output directory at runtime) and removes the matching reads.
+This module removes reads from known non-coding RNA families by aligning them
+to the bundled Rfam sequences.
+
+Features:
+    - Extraction of the bundled Rfam ncRNA FASTA at runtime
+    - Bowtie alignment of reads to Rfam sequences
+    - FASTA output of reads that did not match Rfam
+
+Configuration:
+    Samples and the output directory are set in the constructor. Results go
+    to ``ncRNA_results`` in the output directory.
+
+Dependencies:
+    - Bowtie via mipyrna.aligner
+    - mipyrna.reads: Alignment parsing
+
+Classes / Functions / Exceptions:
+    - FilterRNAfamlies: Remove reads from known ncRNA families.
 
 :Author: Naveen Duhan
 """
 
 import importlib.resources as ir
 import os
-import shutil
-import subprocess
 import tarfile
 
 from mipyrna import utility as mu
@@ -21,7 +35,13 @@ class FilterRNAfamlies:
     """Remove reads from known non-coding RNA families."""
 
     def __init__(self, samples=None,  outdir=".", slurm=False):
-        """Set the samples and output directory."""
+        """Initialize the filter and create the output directory.
+
+        Args:
+            samples (dict): Sample name to ``[group, replicate, reads FASTA path]``.
+            outdir (str): Base output directory. Defaults to the current directory.
+            slurm (bool): Use SLURM for alignment. Defaults to False.
+        """
         
         self.samples = samples
         
@@ -31,7 +51,15 @@ class FilterRNAfamlies:
 
     
     def _extract_rfam_unmapped(self, samples, rfam_samples):
-        """Write the reads that did not match Rfam to a FASTA file per sample."""
+        """Write the reads that did not match Rfam to a FASTA file per sample.
+
+        Args:
+            samples (dict): Sample name to ``[group, replicate, reads FASTA path]``.
+            rfam_samples (dict): Sample name to ``[group, replicate, Rfam alignment DataFrame]``.
+
+        Returns:
+            dict: Sample name to ``[group, replicate, filtered FASTA path]``.
+        """
         
         outfiltered = {}
         
@@ -41,25 +69,25 @@ class FilterRNAfamlies:
             
             rfam_mapped_ids = rfam_samples[k][2]['read_name']
             
-            rfam_mapped_ids.to_csv(f"{k}.txt", index=False)
-    
-            outfile=  f"{output}/{k}_filtered.fasta"
-            
-            execPATH = shutil.which('faSomeRecords')
+            outfile = f"{output}/{k}_filtered.fasta"
 
-            if execPATH is None:
-                raise FileNotFoundError("faSomeRecords (UCSC kent tools) was not found in PATH")
+            mu.exclude_fasta_records(sample[2], rfam_mapped_ids, outfile)
 
-            subprocess.run([execPATH, "-exclude", sample[2], f"{k}.txt", outfile], check=True)
-            
-            os.remove(f"{k}.txt")
-            
             outfiltered[k]=[sample[0],sample[1],outfile]
             
         return outfiltered
     
     def align_rfam(self, cpu=8,mem=20):
-        """Align reads to the bundled Rfam sequences; return the alignments and the remaining reads."""
+        """Align reads to the bundled Rfam sequences and filter the matches.
+
+        Args:
+            cpu (int): Threads for alignment. Defaults to 8.
+            mem (int): Memory for alignment. Defaults to 20.
+
+        Returns:
+            tuple: ``(ncRNA_reads, filtered_samples)``: the parsed Rfam alignments
+            and the reads that remain after removing Rfam matches, both keyed by sample.
+        """
 
         ncRNA_file = os.path.join(self.outdir, "ncRNA_rfam.fa")
 

@@ -28,6 +28,7 @@ echo "[1/5] Preparing sample sheet from RunInfo"
 "${PYTHON_BIN}" - <<'PY' "${RUNINFO}" "${OUTDIR}/samples.txt"
 import sys
 import csv
+import re
 
 runinfo = sys.argv[1]
 out = sys.argv[2]
@@ -42,7 +43,9 @@ with open(out, "w") as fh:
             srr = str(r.get("Run", "")).strip()
             if not srr:
                 continue
-            condition = str(r.get("LibraryName", r.get("SampleName", "group"))).replace(" ", "_")
+            condition = str(r.get("LibraryName", r.get("SampleName", "group")))
+            condition = re.sub(r"[\s_-]*(biological\s+)?rep(licate)?\s*\d+\s*$", "", condition, flags=re.I)
+            condition = re.sub(r"[^A-Za-z0-9]+", "", condition)
             rep_map.setdefault(condition, 0)
             rep_map[condition] += 1
             rep = f"{condition}_rep{rep_map[condition]}"

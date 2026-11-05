@@ -1,7 +1,30 @@
-"""Bowtie index building and read alignment wrappers.
+"""
+Bowtie Aligner Module
 
-Defines Bowtie_Aligner, which builds Bowtie indexes and aligns reads to a
-reference or to the miRBase hairpin and mature sets.
+This module provides Bowtie index building and read alignment wrappers for
+small RNA data. It builds Bowtie indexes from a reference genome and aligns
+reads to a reference or to the miRBase hairpin and mature sets.
+
+Features:
+    - Bowtie index building from plain or gzipped FASTA references
+    - Alignment of FASTA/FASTQ reads, single-end or paired-end, per sample or pooled
+    - Local multi-job execution and SLURM cluster submission
+    - Dry-run mode that returns commands or output names without executing
+    - Thread count adjustment from the configuration file
+
+Configuration:
+    Configured through ``bowtie1.ini`` (sections ``[index]`` and ``[alignment]``), either
+    the packaged default or a user-supplied file. Inputs are a reference FASTA and a
+    samples dictionary from ``utility.read_input_file``; outputs are the index directory
+    and SAM files in ``bowtie_results``.
+
+Dependencies:
+    - Bowtie 1 (``bowtie`` and ``bowtie-build``): Must be on PATH
+    - waiting: Waiting for SLURM jobs to finish
+    - SLURM (optional): Cluster execution
+
+Classes / Functions / Exceptions:
+    - Bowtie_Aligner: Builds Bowtie indexes and aligns reads.
 
 :Author: Naveen Duhan
 """
@@ -23,18 +46,29 @@ from mipyrna.logger import MiPyRNALogger
 log = MiPyRNALogger(mode='a', log='aligner')
 
 class Bowtie_Aligner:
-    """Class for Bowtie aligner
+    """Build Bowtie indexes and align reads with Bowtie.
 
-    :param configFile: User defined Bowtie config file  
-    :param ref_genome: Reference genome file
-    :param slurm: To execute jobs with slurm scheduler
-    :param dryrun: print coomand without executing
-    :param outdir: output directory. Default is from default parameters
-
+    Attributes:
+        genome: Reference genome FASTA file.
+        outdir: Output directory.
+        slurm: Whether jobs are submitted through SLURM.
+        dryrun: Whether commands are only generated, not executed.
+        config: Parsed Bowtie configuration (sections ``index`` and ``alignment``).
     """
 
     def __init__(self, ref_genome=None, configFile=None, outdir=".", slurm=False, dryrun=False):
-        """Set the reference, output directory and execution mode (local or SLURM)."""
+        """Set the reference, output directory and execution mode (local or SLURM).
+
+        Args:
+            ref_genome: Reference genome FASTA file.
+            configFile: User-defined Bowtie config file. Defaults to the packaged ``bowtie1.ini``.
+            outdir: Output directory.
+            slurm: Submit jobs with the SLURM scheduler.
+            dryrun: Generate commands without executing them.
+
+        Raises:
+            ValueError: If ref_genome is not given.
+        """
         if ref_genome is None:
             raise ValueError("ref_genome is required")
 
@@ -61,13 +95,30 @@ class Bowtie_Aligner:
 
 
     def build_index(self, mem=20, tasks = 1, cpu = 8, dep=""):
-        """Build a Bowtie index for the reference genome."""
+        """Build a Bowtie index for the reference genome.
+
+        The genome (decompressed if gzipped) is copied to the index directory and
+        ``bowtie-build`` is run locally or through SLURM.
+
+        Args:
+            mem: Memory in GB for the SLURM job.
+            tasks: Number of tasks for the SLURM job.
+            cpu: Threads to use.
+            dep: SLURM job id this job depends on.
+
+        Returns:
+            The ``bowtie-build`` command string in dry-run mode, otherwise None.
+
+        System Exit:
+            Exits with status 1 if the genome extension is not a FASTA extension
+            or ``bowtie-build`` is not on PATH.
+        """
 
         const = ['--threads','-p']
 
         if not self.slurm:
             
-            config = mu.replace_cpu(self.config['index'], const)
+            config = mu.replace_cpu(self.config['index'], const, cpu=cpu)
 
         else:
 
@@ -101,7 +152,11 @@ class Bowtie_Aligner:
         
         if self.genome.endswith(genome_extensions):
 
-            if self.genome.endswith(".gz"):
+            if self.dryrun:
+
+                pass
+
+            elif self.genome.endswith(".gz"):
 
                 target = os.path.join(output, os.path.basename(self.genome)[:-3])
 
@@ -113,7 +168,9 @@ class Bowtie_Aligner:
 
                 shutil.copy(self.genome, output)
 
-            log.info(f"{mu.get_basename(self.genome)} copied successfully in {directory}")
+            if not self.dryrun:
+
+                log.info(f"{mu.get_basename(self.genome)} copied successfully in {directory}")
         
         else:
 
@@ -146,6 +203,8 @@ class Bowtie_Aligner:
 
         if self.dryrun:
 
+                log.info(f"[dryrun] {bowtie_command}")
+
                 return bowtie_command           
         else:
 
@@ -167,8 +226,11 @@ class Bowtie_Aligner:
 
                 try:
 
-                    with open(os.path.join(output, "bowtie_build.out"), 'w+') as fout:
-                            with open(os.path.join(output, "bowtie_build.err"), 'w+') as ferr:
+                    logdir = os.path.join(output, "logs")
+                    os.makedirs(logdir, exist_ok=True)
+
+                    with open(os.path.join(logdir, "bowtie_build.out"), 'w+') as fout:
+                            with open(os.path.join(logdir, "bowtie_build.err"), 'w+') as ferr:
                                 job_id = subprocess.call(bowtie_command, shell=True,stdout=fout,stderr=ferr)
                                 if job_id != 0:
                                     log.warning(f"command exited with code {job_id}: {bowtie_command}")
@@ -183,7 +245,12 @@ class Bowtie_Aligner:
 
 
     def check_index(self):
-        """Return the Bowtie index files if the index exists, otherwise False."""
+        """Check whether a Bowtie index exists in ``<outdir>/bowtie_index``.
+
+        Returns:
+            Generator of paths of the ``.1.ebwt`` index files if the directory exists,
+            otherwise False.
+        """
 
         output = os.path.join(self.outdir, 'bowtie_index')
 
@@ -196,22 +263,36 @@ class Bowtie_Aligner:
 
         return False
 
-    def run_alignment(self, samplesDict=None, samples=None, fileType='fasta', outType='BWT' , pairedEND=False,  mem= 20, cpu=8, tasks=1, dep=''):
+    def run_alignment(self, samplesDict=None, samples=None, fileType='fasta', outType='BWT' , pairedEND=False,  mem= 20, cpu=8, tasks=1, dep='', jobs=1):
 
 
-        """This function align reads against indexed reference genome.
+        """Align reads against the indexed reference genome.
 
-            :param sampels: samples dictionary containing sample information.
+        With ``samplesDict`` each sample is aligned separately; otherwise the single
+        read file in ``samples`` is aligned as one pooled set.
 
-            :param pairedEND: True if samples are paired.
+        Args:
+            samplesDict: Samples dictionary from ``utility.read_input_file``.
+            samples: Sequence whose third element is the reads file, used when samplesDict is not given.
+            fileType: Read format, ``'fasta'`` or ``'fastq'``.
+            outType: Output type; ``'SAM'`` adds the ``--sam`` option.
+            pairedEND: True if samples are paired-end.
+            mem: Memory in GB for SLURM jobs.
+            cpu: Threads per alignment job.
+            tasks: Number of tasks for SLURM jobs.
+            dep: SLURM job id this job depends on.
+            jobs: Number of samples to align at once in local mode.
 
-            :param mem: Provide memory in GB to use. Default 20 GB.
+        Returns:
+            Dictionary mapping sample key to ``[name, group, sam_file]`` when samplesDict
+            is given, otherwise the path of the pooled SAM file.
 
-            :param tasks: Number of cpu-tasks to run. Defaults to 1.
+        Raises:
+            ValueError: If fileType is not ``'fastq'`` or ``'fasta'``, or neither
+                samplesDict nor samples is given.
 
-            :param cpu: Total number of threads to use. Default 8.
-
-            :param dep: slurm job id on which this job depends.  Defaults to ''.
+        System Exit:
+            Exits if ``bowtie`` is not on PATH.
         """
 
         consta = ['--threads', '-p']
@@ -221,7 +302,7 @@ class Bowtie_Aligner:
             config = self.config['alignment']
             
         else:
-            config = mu.replace_cpu(self.config['alignment'], consta)
+            config = mu.replace_cpu(self.config['alignment'], consta, cpu=cpu)
             
         
         directory = str(config[0])
@@ -257,6 +338,7 @@ class Bowtie_Aligner:
             arg += ' --sam'
 
         outbowtie = {}
+        local_cmds = {}
         
         job_id = []
 
@@ -319,7 +401,7 @@ class Bowtie_Aligner:
                             raise ValueError(f"fileType must be 'fastq' or 'fasta', got {fileType!r}")
 
                     if self.dryrun:
-                            pass
+                            log.info(f"[dryrun] {bowtie_command}")
                     else:
                 
                         if self.slurm:
@@ -334,22 +416,15 @@ class Bowtie_Aligner:
 
                         else:
 
-                            try:
-                                with open(os.path.join(output, "bowtie.out"), 'w+') as fout:
-                                    with open(os.path.join(output, "bowtie.err"), 'w+') as ferr:
-                                        job = subprocess.call(bowtie_command, shell=True,stdout=fout,stderr=ferr)
-                                        if job != 0:
-                                            log.warning(f"command exited with code {job}: {bowtie_command}")
-                                        job_id.append(job)
-                                        log.info(f"Job successfully completed for {outPrefix} for alignment")
+                            local_cmds[key] = bowtie_command
 
-                            except Exception:
-                                    
-                                    log.exception("Job sumission failed")
-                if self.dryrun:
+            if self.dryrun:
 
-                    return outbowtie 
+                return outbowtie 
                 
+            if local_cmds:
+                mu.local_run(program="bowtie", command=local_cmds, outdir=output, jobs=jobs)
+
             if self.slurm:
                 
                 for job in job_id:     
@@ -399,8 +474,11 @@ class Bowtie_Aligner:
                 else:
 
                     try:
-                        with open(os.path.join(output, "bowtie.out"), 'w+') as fout:
-                            with open(os.path.join(output, "bowtie.err"), 'w+') as ferr:
+                        logdir = os.path.join(output, "logs")
+                        os.makedirs(logdir, exist_ok=True)
+
+                        with open(os.path.join(logdir, "bowtie.out"), 'w+') as fout:
+                            with open(os.path.join(logdir, "bowtie.err"), 'w+') as ferr:
                                 job = subprocess.call(bowtie_command, shell=True,stdout=fout,stderr=ferr)
                                 if job != 0:
                                     log.warning(f"command exited with code {job}: {bowtie_command}")

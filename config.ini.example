@@ -1,0 +1,11 @@
+[workflow]
+input_file = samples.txt
+input_path = fastq
+genome = genome.fa
+species = ath
+species_type = plants
+outdir = mipyrna_results
+cpu = 160
+jobs = 6
+trimmer = trimmomatic
+skip_qc = true

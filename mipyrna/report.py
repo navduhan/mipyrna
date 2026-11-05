@@ -1,6 +1,26 @@
 #!/usr/bin/env python3
 
-"""Simple reproducible report generation for miPyRNA runs."""
+"""Report Module
+
+This module writes a Markdown summary and a metadata JSON for a miPyRNA run.
+
+Features:
+    - Counts of known, novel, target, enrichment and DEG records
+    - List of key output files
+    - Workflow metadata saved as JSON
+
+Configuration:
+    Input is the output directory and a metadata dictionary of file paths.
+    Output goes to ``report/analysis_report.md`` and ``report/workflow_metadata.json``.
+
+Dependencies:
+    - pandas: Row counting
+
+Classes / Functions / Exceptions:
+    - generate_report: Write the report and metadata files.
+
+:Author: Naveen Duhan
+"""
 
 import json
 import os
@@ -14,7 +34,15 @@ log = MiPyRNALogger(mode='a', log='report')
 
 
 def _safe_count(path, sep="\t"):
-    """Return the number of rows in a table, or 0 if it is missing or unreadable."""
+    """Count the rows of a table.
+
+    Args:
+        path (str): Path to the table, may be None.
+        sep (str): Column separator. Defaults to a tab.
+
+    Returns:
+        int: Number of rows, or 0 if the file is missing or unreadable.
+    """
     if path is None or not os.path.exists(path):
         return 0
     try:
@@ -25,7 +53,16 @@ def _safe_count(path, sep="\t"):
 
 
 def generate_report(outdir=".", metadata=None):
-    """Write the Markdown analysis report and workflow metadata JSON."""
+    """Write the Markdown analysis report and workflow metadata JSON.
+
+    Args:
+        outdir (str): Run output directory. Defaults to the current directory.
+        metadata (dict, optional): Workflow metadata with ``known_file``,
+            ``novel_file``, ``targets_file``, ``enrichment_file`` and ``deg_file`` paths.
+
+    Returns:
+        tuple: ``(report_path, metadata_path)``.
+    """
     report_dir = mu.make_directory(os.path.join(outdir, "report"))
     report_path = os.path.join(report_dir, "analysis_report.md")
     meta_path = os.path.join(report_dir, "workflow_metadata.json")

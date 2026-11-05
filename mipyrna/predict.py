@@ -1,6 +1,29 @@
 #!/usr/bin/env python3
 
-"""Score a FASTA of miRNA precursor sequences with the bundled model."""
+"""Precursor Prediction Module
+
+This module scores a FASTA file of miRNA precursor sequences with the bundled
+machine-learning model and reports the probability and call for each sequence.
+
+Features:
+    - Feature extraction for every FASTA record
+    - Model scoring for plant or animal precursors
+    - Skipped sequences are reported with the reason instead of being dropped
+
+Configuration:
+    Input is a FASTA path, the species type (``plants`` or ``animals``) and a
+    probability threshold. Output is a pandas DataFrame.
+
+Dependencies:
+    - Biopython: FASTA parsing
+    - pandas: Result table
+    - mipyrna.features, mipyrna.model_store: Feature generation and model scoring
+
+Classes / Functions / Exceptions:
+    - predict_fasta: Score every sequence in a FASTA file.
+
+:Author: Naveen Duhan
+"""
 
 import pandas as pd
 from Bio import SeqIO
@@ -10,7 +33,18 @@ from mipyrna.features import Precursor_Features
 
 
 def predict_fasta(fasta, species_type='plants', threshold=0.5):
-    """Return one row per sequence: P(miRNA), the call, or why it was skipped."""
+    """Score the precursor sequences of a FASTA file.
+
+    Args:
+        fasta (str): Path to the FASTA file of precursor sequences.
+        species_type (str): Model to use, ``'plants'`` or ``'animals'``. Defaults to ``'plants'``.
+        threshold (float): Minimum P(miRNA) to call a sequence ``'miRNA'``. Defaults to 0.5.
+
+    Returns:
+        pandas.DataFrame: One row per sequence with columns ``id``, ``length``,
+        ``P_miRNA``, ``call`` and ``skipped`` (the reason features could not be
+        generated, otherwise None).
+    """
     rows, feats, kept = [], [], []
 
     for record in SeqIO.parse(fasta, 'fasta'):

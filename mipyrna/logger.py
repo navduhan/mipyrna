@@ -1,39 +1,106 @@
-"""Logging setup for miPyRNA.
+"""miPyRNA Logging Module
+
+This module provides the logger factory shared by all miPyRNA modules. Loggers
+write to the console, and to a log file once :func:`set_log_file` has been called.
+Earlier messages are held in memory and written then.
+
+Features:
+    - Named per-module loggers that never propagate to the root logger
+    - Handlers are attached only once per logger name
+    - One shared log file, created only when a run directory is set
+    - Console logging at DEBUG level with a ``HH:MM:SS`` timestamp format
+
+Configuration:
+    The logger name is passed to :func:`MiPyRNALogger`. The log file location is set
+    with :func:`set_log_file`; until then messages are only held in memory, so commands such
+    as ``--help`` and ``--check`` leave no files behind.
+
+Dependencies:
+    - logging: Python standard library
+
+Classes / Functions / Exceptions:
+    - MiPyRNALogger: Return a configured logger for a module.
+    - set_log_file: Start writing all miPyRNA logs to a file.
 
 :Author: Naveen Duhan
 """
 
 import logging
+import os
+
+FORMAT = '[%(asctime)s]  %(module)s :: %(levelname)s : %(message)s'
+DATEFMT = '%H:%M:%S'
+
+
+class _SharedFileHandler(logging.FileHandler):
+    """File handler that stays silent and creates no file until a path is set."""
+
+    def __init__(self):
+        super().__init__(os.devnull, mode='a', delay=True)
+        self.enabled = False
+        self.pending = []
+
+    def emit(self, record):
+        """Write the record, or hold it until a log file has been set.
+
+        Args:
+            record (logging.LogRecord): The record to write.
+        """
+        if self.enabled:
+            super().emit(record)
+        else:
+            self.pending.append(record)
+
+
+_file_handler = _SharedFileHandler()
+_file_handler.setFormatter(logging.Formatter(FORMAT, datefmt=DATEFMT))
+
+
+def set_log_file(path):
+    """Write all miPyRNA logs to ``path`` from now on.
+
+    The parent directory is created if needed and the file is appended to. Messages
+    logged earlier in the run are written first.
+
+    Args:
+        path (str): Log file path.
+    """
+    path = os.path.abspath(path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    _file_handler.close()
+    _file_handler.baseFilename = path
+    _file_handler.enabled = True
+    for record in _file_handler.pending:
+        _file_handler.emit(record)
+    _file_handler.pending.clear()
 
 
 def MiPyRNALogger(mode, log):
+    """Create or fetch the logger for a miPyRNA module.
 
-    """ This function intialize logger in the miPyRNA modules
+    The logger writes to the console and to the shared log file set by
+    :func:`set_log_file`. If the named logger already has handlers it is returned
+    unchanged.
 
-    :param  mode: Logger name for the module
+    Args:
+        mode (str): Unused, kept for backward compatibility.
+        log (str): Logger name, normally the module name.
 
-    :param  log: File name for logging
+    Returns:
+        logging.Logger: The configured logger.
     """
     logger = logging.getLogger(log)
-    logger.propagate=False
+    logger.propagate = False
     if logger.handlers:
         return logger
 
-    # set format for logging
-    logFormatter =logging.Formatter('[%(asctime)s]  %(module)s :: %(levelname)s : %(message)s',datefmt='%H:%M:%S')
-    
     logger.setLevel(logging.DEBUG)
-    # write log in a user provided log file
-    
-    fileHandler = logging.FileHandler("{}".format('mipyrna.log'), mode= mode)
 
-    fileHandler.setFormatter(logFormatter)
-
-    logger.addHandler(fileHandler)
+    logger.addHandler(_file_handler)
 
     consoleHandler = logging.StreamHandler()
 
-    consoleHandler.setFormatter(logging.Formatter('[%(asctime)s]  %(module)s :: %(levelname)s : %(message)s',datefmt='%H:%M:%S'))
+    consoleHandler.setFormatter(logging.Formatter(FORMAT, datefmt=DATEFMT))
 
     consoleHandler.setLevel(logging.DEBUG)
 

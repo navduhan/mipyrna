@@ -1,26 +1,51 @@
-"""miRBase download and sequence utilities.
+"""miRBase Sequence Module
 
-Defines MirBase, which fetches and prepares miRBase hairpin and mature
-sequences for a species or clade.
+This module downloads miRBase hairpin and mature sequences and subsets them
+for a species or for the other species of the same clade.
+
+Features:
+    - Validation of the species code against the bundled miRBase organisms table
+    - Download of all mature and hairpin sequences from miRBase
+    - Extraction of the sequences of one species
+    - Extraction of the sequences of all or all other species of a clade
+
+Configuration:
+    The species code (for example ``ath``), the clade (``plants``, ``animals``,
+    ``virus`` or ``fungi``) and the output directory are set in the constructor.
+
+Dependencies:
+    - Biopython: FASTA parsing
+    - pandas: Organisms table
+    - Internet access to www.mirbase.org
+
+Classes / Functions / Exceptions:
+    - MirBase: Download and subset miRBase sequences.
 
 :Author: Naveen Duhan
 """
 
 import importlib.resources as ir
 import os
-import ssl
-import subprocess
 
 import pandas as pd
-import wget
 from Bio import SeqIO
 
-ssl._create_default_https_context = ssl._create_unverified_context
+from mipyrna import utility as mu
+
 
 class MirBase:
     """Download and subset miRBase sequences for a species or clade."""
     def __init__(self, species=None, speciesClass= None, outdir='.'):
-        """Set the species and class (plants, animals, virus or fungi); validate the species code."""
+        """Initialize the miRBase helper and validate the species code.
+
+        Args:
+            species (str): miRBase species code, for example ``'ath'``.
+            speciesClass (str): Clade: ``'plants'``, ``'animals'``, ``'virus'`` or ``'fungi'``.
+            outdir (str): Output directory. Defaults to the current directory.
+
+        Raises:
+            ValueError: If ``speciesClass`` is None or the species code is not a known miRBase species.
+        """
 
         if speciesClass is None:
             raise ValueError("speciesClass is required")
@@ -34,23 +59,20 @@ class MirBase:
 
 
     def get_organism(self):
-        """Download the miRBase organisms file and return its path."""
+        """Get the path of the bundled miRBase organisms table.
 
-        organism_file = os.path.join(self.outdir, 'organisms.txt.gz')
+        Returns:
+            str: Path to ``data/organisms.txt`` inside the package.
+        """
 
-        out = os.path.join(self.outdir, 'organisms.txt')
-
-        if os.path.exists(out):
-            os.remove(out)
-
-        wget.download("https://www.mirbase.org/ftp/CURRENT/organisms.txt.gz", organism_file)
-
-        subprocess.call(f"gunzip {os.path.join(self.outdir, 'organisms.txt.gz')}", shell=True)
-            
-        return out
+        return str(ir.files("mipyrna").joinpath("data/organisms.txt"))
 
     def check_organim(self):
-        """Return True if the species code is a known miRBase species."""
+        """Check that the species code is a known miRBase species.
+
+        Returns:
+            bool: True if the species code is in the organisms table.
+        """
         
         file = str(ir.files("mipyrna").joinpath("data/organisms.txt"))
         df = pd.read_csv(file, sep="\t")
@@ -61,7 +83,13 @@ class MirBase:
 
 
     def get_mature(self):
-        """Download all mature miRBase sequences and return the path."""
+        """Download all mature miRBase sequences.
+
+        An existing ``mature.fa`` in the output directory is replaced.
+
+        Returns:
+            str: Path to the downloaded ``mature.fa``.
+        """
 
         out = os.path.join(self.outdir, 'mature.fa')
 
@@ -69,28 +97,40 @@ class MirBase:
         if os.path.exists(out):
             os.remove(out)
 
-        wget.download("https://www.mirbase.org/download/mature.fa", out )
+        mu.download_file("https://www.mirbase.org/download/mature.fa", out)
 
         # subprocess.call(f"gunzip {os.path.join(self.outdir, 'mature.fa.gz')}", shell=True)
 
         return out
 
     def get_hairpin(self):
-        """Download all miRBase hairpin sequences and return the path."""
+        """Download all miRBase hairpin sequences.
+
+        An existing ``hairpin.fa`` in the output directory is replaced.
+
+        Returns:
+            str: Path to the downloaded ``hairpin.fa``.
+        """
 
         out = os.path.join(self.outdir, 'hairpin.fa')
 
         if os.path.exists(out):
             os.remove(out)
 
-        wget.download("https://www.mirbase.org/download/hairpin.fa", out)
+        mu.download_file("https://www.mirbase.org/download/hairpin.fa", out)
 
         # subprocess.call(f"gunzip {os.path.join(self.outdir, 'hairpin.fa.gz')}", shell=True)
 
         return out
 
     def get_species(self):
-        """Write the mature and hairpin sequences of the species and return their paths."""
+        """Write the mature and hairpin sequences of the species.
+
+        The full downloads are removed after filtering.
+
+        Returns:
+            dict: ``{'mature': path, 'hairpin': path}`` of the species FASTA files.
+        """
 
         species_mature = os.path.join(self.outdir, f'{self.species}_mature.fa')
         species_precursor = os.path.join(self.outdir, f'{self.species}_hairpin.fa')
@@ -124,7 +164,14 @@ class MirBase:
         return {'mature': species_mature, 'hairpin': species_precursor}
 
     def get_other_species(self):
-        """Write the sequences of the other species in the same class, excluding this species."""
+        """Write the sequences of the other species in the same clade.
+
+        The selected species is excluded. The downloads and the extracted
+        organisms table are removed afterwards.
+
+        Returns:
+            dict: ``{'other_mature': path, 'other_hairpin': path}`` of the FASTA files.
+        """
 
         org_file = self.get_organism()
 
@@ -176,7 +223,13 @@ class MirBase:
         return {'other_mature': species_mature, 'other_hairpin': species_precursor}
     
     def get_all_species(self):
-        """Write the mature and hairpin sequences of every species in the class."""
+        """Write the sequences of every species in the clade.
+
+        The downloads and the extracted organisms table are removed afterwards.
+
+        Returns:
+            dict: ``{'other_mature': path, 'other_hairpin': path}`` of the FASTA files.
+        """
 
         org_file = self.get_organism()
 
