@@ -10,7 +10,7 @@ Features:
 
 Configuration:
     Input is a tab-separated targets file with a ``target_id`` column and a
-    g:Profiler organism code. Output is ``functional_annotation/enrichment_results.tsv``.
+    g:Profiler organism code. Output is ``enrichment_results.tsv`` in the output directory.
 
 Dependencies:
     - requests: Calls the g:Profiler REST API (internet access required)
@@ -27,7 +27,6 @@ import os
 import pandas as pd
 import requests
 
-from mipyrna import utility as mu
 from mipyrna.logger import MiPyRNALogger
 
 log = MiPyRNALogger(mode='a', log='annotation')
@@ -36,7 +35,7 @@ log = MiPyRNALogger(mode='a', log='annotation')
 def run_enrichment(targets_file=None, organism=None, outdir=".", sources=None, user_threshold=0.05):
     """Run g:Profiler enrichment on the target genes.
 
-    Writes ``functional_annotation/enrichment_results.tsv`` in ``outdir``.
+    Writes ``enrichment_results.tsv`` in ``outdir``.
 
     Args:
         targets_file (str): Tab-separated targets file with a ``target_id`` column.
@@ -61,7 +60,8 @@ def run_enrichment(targets_file=None, organism=None, outdir=".", sources=None, u
     if sources is None:
         sources = ["GO:BP", "GO:MF", "GO:CC", "KEGG"]
 
-    annotation_dir = mu.make_directory(os.path.join(outdir, "functional_annotation"))
+    annotation_dir = outdir
+    os.makedirs(annotation_dir, exist_ok=True)
     df = pd.read_csv(targets_file, sep="\t")
     if "target_id" not in df.columns:
         raise ValueError("targets_file must contain a 'target_id' column")

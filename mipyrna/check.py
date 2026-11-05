@@ -33,7 +33,7 @@ REQUIRED_TOOLS = ('bowtie', 'bowtie-build', 'makeblastdb', 'blastn', 'miranda')
 OPTIONAL_TOOLS = ('fastqc', 'trimmomatic', 'flexbar', 'trim_galore')
 
 # Versions the bundled models were trained and validated with.
-PINNED = {'tensorflow': '2.20.0', 'keras': '3.11.3', 'numpy': '2.4.6',
+PINNED = {'tensorflow': '2.20.0', 'keras': '3.15.0', 'numpy': '2.4.6',
           'ViennaRNA': '2.7.2', 'forgi': '2.2.3'}
 
 

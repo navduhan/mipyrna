@@ -8,7 +8,7 @@ Features:
     - ``predict``: score precursor sequences from a FASTA file
     - ``targets``: miRanda target prediction
     - ``enrich``: g:Profiler functional enrichment
-    - ``report``: Markdown report generation
+    - ``report``: PDF report generation
     - ``--check`` and ``--version`` global options
 
 Configuration:
@@ -116,6 +116,8 @@ def build_parser(defaults=None):
     wf.add_argument("--adapter", help="3' adapter: kit name or sequence (default: auto-detect)")
     wf.add_argument("--dryrun", action="store_true", help="Show the QC, trimming and alignment commands without running them")
     wf.add_argument("--resume", action="store_true", help="Reuse --outdir and skip the stages and samples an earlier run finished")
+    wf.add_argument("--require-star", action="store_true", help="Keep only novel miRNAs with star reads")
+    wf.add_argument("--min-star-reads", type=int, default=1, help="Star reads needed with --require-star (default: 1)")
     wf.add_argument("--trimmer", choices=["trimmomatic", "flexbar", "trim_galore"], default="trimmomatic")
 
     wf.add_argument("-c", "--config-file", default=argparse.SUPPRESS, help="INI file with a [workflow] section")
@@ -149,7 +151,7 @@ def build_parser(defaults=None):
     enr.add_argument("--organism", required=True)
     enr.add_argument("--outdir", default=".")
 
-    rep = sub.add_parser("report", help="Generate a markdown analysis report")
+    rep = sub.add_parser("report", help="Generate a PDF analysis report")
     rep.add_argument("--outdir", default=".")
     rep.add_argument("--metadata-json")
 
@@ -198,6 +200,8 @@ def main(argv=None):
             jobs=args.jobs,
             mem=args.mem,
             adapter=args.adapter,
+            require_star=args.require_star,
+            min_star_reads=args.min_star_reads,
             trimmer=args.trimmer,
             dryrun=args.dryrun,
             resume=args.resume

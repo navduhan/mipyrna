@@ -25,6 +25,7 @@ dependencies:
   - psutil
   - jinja2
   - tabulate
+  - reportlab
   - notebook
 
   # Bioinformatics Python dependencies used by miPyRNA
@@ -36,7 +37,7 @@ dependencies:
   - forgi=2.2.3
   - viennarna=2.7.2
   - adjusttext
-  - keras=3.11.3
+  - keras=3.15.0
   - tensorflow=2.20.0
 
   # R / DE analysis

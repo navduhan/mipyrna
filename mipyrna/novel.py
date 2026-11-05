@@ -28,7 +28,7 @@ Dependencies:
     - ViennaRNA (RNA): Folding
     - forgi: Bulge graph analysis
     - NCBI BLAST+: `makeblastdb` and `blastn`
-    - pandas / numpy / tqdm: Data handling and progress
+    - pandas / numpy: Data handling
     - mipyrna.model_store, mipyrna.features, mipyrna.reads, mipyrna.knowndb: Scoring, features, reads, reference
 
 Classes / Functions / Exceptions:
@@ -52,7 +52,6 @@ import forgi.graph.bulge_graph as fgb
 import numpy as np
 import pandas as pd
 import RNA
-from tqdm import tqdm
 
 from mipyrna import model_store as ms
 from mipyrna import utility as mu
@@ -811,25 +810,40 @@ class Novel_miRNA:
             if c.cluster in groups
         ]
         log.info(f"Scoring {len(tasks)} clusters of sample {sample[0]} with {self.workers} worker(s)")
-        return [c for c in self._score_clusters(tasks) if c is not None and len(c) > 0]
+        return [c for c in self._score_clusters(tasks, sample[0]) if c is not None and len(c) > 0]
 
-    def _score_clusters(self, tasks):
+    def _score_clusters(self, tasks, name="Clusters"):
         """
         Score clusters serially or in a process pool; results keep the input order.
 
+        Progress is logged about every 5% of the clusters.
+
         Args:
             tasks (list): Cluster tasks of (cluster ID, cluster size, reads DataFrame).
+            name (str): Sample name used in the progress messages. Defaults to "Clusters".
 
         Returns:
             list: One result per task, a DataFrame or None.
         """
-        if self.workers <= 1 or len(tasks) < 2:
-            return [copy.copy(self)._score_cluster(t) for t in tqdm(tasks, desc="Clusters")]
+        total = len(tasks)
+        step = max(1, total // 20)
+        results = []
+
+        def collect(iterator):
+            for result in iterator:
+                results.append(result)
+                if len(results) % step == 0 or len(results) == total:
+                    log.info(f"Scored {len(results)}/{total} clusters of sample {name}")
+
+        if self.workers <= 1 or total < 2:
+            collect(copy.copy(self)._score_cluster(t) for t in tasks)
+            return results
         light = copy.copy(self)
         light.samples = None
-        chunk = max(1, len(tasks) // (self.workers * 8))
+        chunk = max(1, min(10, total // (self.workers * 8)))
         with multiprocessing.Pool(self.workers, _init_worker, (light,)) as pool:
-            return list(tqdm(pool.imap(_run_task, tasks, chunksize=chunk), total=len(tasks), desc="Clusters"))
+            collect(pool.imap(_run_task, tasks, chunksize=chunk))
+        return results
 
     def get_novel_miRNA(self):
         """

@@ -170,7 +170,7 @@ Standalone commands are also available:
 
 ```bash
 mipyrna targets --mirna-file novel_mature.fa --mrna-file transcripts.fa --outdir results
-mipyrna enrich --targets-file results/targets_raw/miranda_targets.tsv --organism athaliana --outdir results
+mipyrna enrich --targets-file results/6.Target_Prediction/targets_raw/miranda_targets.tsv --organism athaliana --outdir results
 mipyrna report --outdir results
 ```
 
