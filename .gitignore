@@ -28,3 +28,6 @@ benchmark/fastq
 benchmark/metadata
 benchmark/references
 .ruff_cache
+
+docs/_build
+.vscode
