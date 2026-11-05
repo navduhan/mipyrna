@@ -61,7 +61,7 @@ def flexbarRun(sampleDict,  configFile=None, slurm=False, mem=10, cpu=8, task=1,
         config = mu.parse_config_file(ir.files("mipyrna").joinpath("param/flexbar.ini"))
 
         
-    flexbar_config = config[list(config.keys())[0]]
+    flexbar_config = config[next(iter(config.keys()))]
 
     output =  mu.get_basename(str(flexbar_config[0]).split(" ")[1])
 
@@ -72,7 +72,7 @@ def flexbarRun(sampleDict,  configFile=None, slurm=False, mem=10, cpu=8, task=1,
         output = mu.make_directory(output1, dryrun=dryrun)
 
     else:
-        parent, base = os.path.split(output)
+        _parent, base = os.path.split(output)
         output = mu.make_directory(base, dryrun=dryrun)
 
     const = ['threads', '-n']  # require when change number of CPUs
@@ -109,7 +109,7 @@ def flexbarRun(sampleDict,  configFile=None, slurm=False, mem=10, cpu=8, task=1,
 
         else:
             try:
-                inputFile = value[2]
+                value[2]
 
             except Exception:
 
@@ -248,7 +248,7 @@ def trimmomaticRun(sampleDict=None, configFile=None, slurm=False, mem=10, cpu=8,
             
            
 
-    trimmomatic_config = config[list(config.keys())[0]]
+    trimmomatic_config = config[next(iter(config.keys()))]
 
     output = mu.get_basename(str(trimmomatic_config[0]))
 
@@ -276,8 +276,6 @@ def trimmomaticRun(sampleDict=None, configFile=None, slurm=False, mem=10, cpu=8,
 
     for key, value in sampleDict.items():  # Iterate thorough total number of samples
 
-        summ = os.path.join(output, value[0]+"_summary.txt")
-
         if paired:
             try:
                 inputFile1 = value[2]
@@ -292,8 +290,6 @@ def trimmomaticRun(sampleDict=None, configFile=None, slurm=False, mem=10, cpu=8,
                     "Please provide a paired END sample file or input Path is wrong")
                 raise
 
-            out1 = os.path.join(output, value[0]+"_1.fastq.gz")
-            out2 = os.path.join(output, value[0]+"_2.fastq.gz")
             inputPair = mu.get_basename(
                 inputFile1)+" and " + mu.get_basename(inputFile2)
 
@@ -308,8 +304,6 @@ def trimmomaticRun(sampleDict=None, configFile=None, slurm=False, mem=10, cpu=8,
 
             outtrimmomatic[key] = [value[0], value[1],
                                    os.path.join(output, value[0]+".fastq.gz")]
-
-            out = os.path.join(output, value[0]+".fastq.gz")
 
             inputPair = mu.get_basename(inputFile)
 
@@ -407,7 +401,7 @@ def trim_galoreRun(sampleDict=None, configFile=None, slurm=False, mem=10, cpu=8,
         config = mu.parse_config_file(ir.files("mipyrna").joinpath("param/trim_galore.ini"))
         
 
-    trim_galore_config = config[list(config.keys())[0]]
+    trim_galore_config = config[next(iter(config.keys()))]
 
     output =  mu.get_basename(str(trim_galore_config[0].split(" ")[1]))
 
@@ -457,7 +451,7 @@ def trim_galoreRun(sampleDict=None, configFile=None, slurm=False, mem=10, cpu=8,
 
         else:
             try:
-                inputFile = value[2]
+                value[2]
 
             except Exception:
 

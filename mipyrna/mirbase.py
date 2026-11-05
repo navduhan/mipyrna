@@ -52,15 +52,11 @@ class MirBase:
 
         df.columns = ['Species', 'Division', 'Name', 'Tree', 'TaxID']
 
-        if self.species in df['Species'].values.tolist():
-            return True
-
-        return False
+        return self.species in df['Species'].values.tolist()
 
 
     def get_mature(self):
 
-        outfile = os.path.join(self.outdir, 'mature.fa')
         out = os.path.join(self.outdir, 'mature.fa')
 
 
@@ -74,8 +70,6 @@ class MirBase:
         return out
 
     def get_hairpin(self):
-
-        outfile = os.path.join(self.outdir, 'hairpin.fa')
 
         out = os.path.join(self.outdir, 'hairpin.fa')
 

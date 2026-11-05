@@ -28,13 +28,13 @@ class Cluster_reads:
 
             cluster_trees = collections.defaultdict(lambda:
                 ClusterTree(self.cluster_distance, self.min_size))
-            for i, row in input_file.iterrows():
+            for _i, row in input_file.iterrows():
                 chrom = row['name']
                 cluster_trees[chrom].insert(row.start, row.end, row.name)
             clustertrees = dict(cluster_trees)
             cgroups = []
             icount = 1
-            for chrom, cltree in clustertrees.items():
+            for cltree in clustertrees.values():
             
                 for start, end, ids in cltree.getregions():
                     c = input_file.loc[ids].copy()
@@ -44,10 +44,7 @@ class Cluster_reads:
                     c = c.groupby(['strand']).filter(lambda x: len(x) > 1)
                     cgroups.append(c)
                     icount +=1
-            if len(cgroups) > 0:
-                df = pd.concat(cgroups)
-            else:
-                df = pd.DataFrame()
+            df = pd.concat(cgroups) if len(cgroups) > 0 else pd.DataFrame()
 
         #     clusts = df.groupby(['name', 'cluster', 'cl_start', 'cl_end', 'strand']) \
 		#    .agg(reads='sum', length=pd.NamedAgg(column='length', aggfunc='max')) \

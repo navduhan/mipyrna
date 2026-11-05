@@ -122,7 +122,7 @@ def main(argv=None):
         from mipyrna.report import generate_report
         metadata = None
         if args.metadata_json:
-            with open(args.metadata_json, "r") as fh:
+            with open(args.metadata_json) as fh:
                 metadata = json.load(fh)
         report, meta = generate_report(outdir=args.outdir, metadata=metadata)
         print(json.dumps({"report": report, "metadata": meta}, indent=2))

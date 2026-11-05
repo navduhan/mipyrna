@@ -1,3 +1,4 @@
+import contextlib
 import os
 import re
 import shutil
@@ -70,7 +71,7 @@ class Novel_miRNA:
     def get_bulge(self, seq):
         
             seq = seq.replace('T','U')
-            pstructure, pmfe = RNA.fold(seq)
+            pstructure, _pmfe = RNA.fold(seq)
 
             bulge_graph = fgb.BulgeGraph.from_dotbracket(pstructure, seq)
             
@@ -101,10 +102,10 @@ class Novel_miRNA:
             loops = list(bg.hloop_iterator())
             if len(loops)==0:
                 return 'too many loops'
-            l = list(bg.define_range_iterator('h0'))[0]
+            l = next(iter(bg.define_range_iterator('h0')))
             if (start<l[0] and end>l[0]) or (start<l[1] and end>l[1]):
                 return 'mature in loop'
-            p = list(bg.stem_bp_iterator('s0'))[0]
+            p = next(iter(bg.stem_bp_iterator('s0')))
             
             if start == 0:
                 return 'mature not found'
@@ -120,7 +121,6 @@ class Novel_miRNA:
 
         bg = self.get_bulge(precursor)
         start = self.find_subseq(precursor, mature)+1
-        end = start + len(mature)
         
         for p in bg.adjacent_stem_pairs_iterator():
             pp = [p[0], p[2]]
@@ -302,11 +302,9 @@ class Novel_miRNA:
         idx = df.groupby('mature')['score'].idxmax().tolist()
         final_miRNAs = df.loc[idx].reset_index(drop=True)
 
-        try:
+        with contextlib.suppress(Exception):
             final_miRNAs['Novel_ID'] = [f"{self.species}_mipyrna_{final_miRNAs.iloc[i]['chrom']}_miR_{i + 1}"
                                         for i in range(len(final_miRNAs))]
-        except Exception:
-            pass
 
         return final_miRNAs
 
@@ -324,7 +322,7 @@ class Novel_miRNA:
     def _write_fasta(self, df, output, type='known', seq='mature'):
         mature_seq = []
         with open(output,'w') as fp:
-            for i, r in df.iterrows():
+            for _i, r in df.iterrows():
                 if seq=='mature':
                     if type=='known':
                         if r['Known_ID'] in  mature_seq:
@@ -424,13 +422,13 @@ class Novel_miRNA:
         
         mirna_temp = mu.make_directory(os.path.join(self.outdir, "temp"))
         
-        for key, sample in self.samples.items():
+        for sample in self.samples.values():
             
             reads = [] #stores reads associated with each cluster
             N = []
 
             clusts = sample[3][sample[3].reads>=self.readsCutoff]
-            for i,c in clusts.iterrows():
+            for _i,c in clusts.iterrows():
                 df = sample[2][sample[2].cluster==c.cluster]
                 df = df.sort_values('reads',ascending=False)
                 if c.clust_size<self.clusterCutoff:

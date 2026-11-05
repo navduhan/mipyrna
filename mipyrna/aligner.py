@@ -94,7 +94,7 @@ class Bowtie_Aligner:
                 
                 output = mu.make_directory(directory)
 
-        genome_extensions = tuple(['.fa', '.fasta', '.fna', '.fa.gz', 'fna.gz', '.fasta.gz'])
+        genome_extensions = ('.fa', '.fasta', '.fna', '.fa.gz', 'fna.gz', '.fasta.gz')
         
         if self.genome.endswith(genome_extensions):
 
@@ -186,12 +186,7 @@ class Bowtie_Aligner:
         if (os.path.exists(output) and os.path.isdir(output)):
             for f in files:
 
-                if not (os.path.join(output, _) for _ in os.listdir(output) if _.endswith(f)):
-
-                    return False
-                else:
-
-                    return True
+                return (os.path.join(output, _) for _ in os.listdir(output) if _.endswith(f))
 
         return False
 
@@ -351,7 +346,7 @@ class Bowtie_Aligner:
                 
                 for job in job_id:     
                     
-                    wait(lambda: mu.check_status(job), waiting_for="alignment to finish")
+                    wait(lambda job=job: mu.check_status(job), waiting_for="alignment to finish")
                     log.info(f"Alignment completed for job {job}")
                 
             return outbowtie

@@ -23,7 +23,7 @@ class Read_process:
         if sample[2].endswith(".gz"):
             file = gzip.open(sample[2], "rt")
         else:
-            file = open(sample[2], "rt")
+            file = open(sample[2])
             
         fastqs = SeqIO.parse(file, 'fastq')
 
@@ -77,7 +77,7 @@ class Read_process:
             df = pd.read_csv(sample[2], sep="\t", header=None)
             df.columns = ['read', 'strand', 'chrom', 'start', 'mature', 'distance', 'num_align', 'info']
 
-            for i, row in df.iterrows():
+            for _i, row in df.iterrows():
                 mature = str(row['mature'])
                 if str(row['strand']) == "-":
                     mature = mature[::-1].translate(str.maketrans("ACGTN", "TGCAN"))
@@ -133,15 +133,12 @@ class Read_process:
     def get_consensus_read(self, ref_precursor, aligned_cluster):
 
         mature_read = None
-        if aligned_cluster.iloc[0].strand == '+':
-            seq_start = 'start'
-        else:
-            seq_start = 'end'
+        seq_start = 'start' if aligned_cluster.iloc[0].strand == '+' else 'end'
         # group = aligned_cluster.groupby([seq_start, 'length']).agg({'reads':np.sum}).sort_values(by='reads', ascending=False).reset_index()
         group = aligned_cluster.groupby([seq_start, 'length'])['reads'].agg('sum').sort_values(ascending=False).reset_index()
         consensus = aligned_cluster[(aligned_cluster[seq_start]==group.iloc[0][seq_start]) &(aligned_cluster.length == group.iloc[0].length)].sort_values(by='reads', ascending=False)
 
-        for k, v in consensus.iterrows():
+        for _k, v in consensus.iterrows():
 
             if v.seq in ref_precursor:
 

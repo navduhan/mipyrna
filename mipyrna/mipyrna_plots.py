@@ -9,6 +9,7 @@
 """
 
 
+import contextlib
 from itertools import chain
 
 import matplotlib.pyplot as plt
@@ -45,7 +46,6 @@ def plotVolcano(degDF=None, comp=None, FOLD=2, pValue=0.05, color=('red', 'grey'
     LFC = "logFC(" + comp + ")"
     _x = r'$ log_{2}(Fold Change)$'
     _y = r'$ -log_{10}(P-value)$'
-    color = color
     dk = degDF.filter(like=comp, axis=1)  # Use `like` for regex-like filtering
 
     try:
@@ -155,10 +155,8 @@ def plotMA(degDF=None, countDF=None, comp=None,FOLD=2, FDR=0.05, color=('red','g
 
         a = ax.scatter(finalDF['log(2)_Mean'], finalDF[LFC], c=color_num, cmap=ListedColormap(color),
                             alpha=alpha, s=dotsize, marker=markerType)
-        try:
+        with contextlib.suppress(ValueError):  # raised if `y` is empty
             ax.legend(handles=a.legend_elements()[0], labels=legendlabels,  bbox_to_anchor=(1.46,1,0,0))
-        except ValueError:  #raised if `y` is empty.
-            pass
 
         plt.axhline(y=0, color='#7d7d7d', linestyle='--')
         
@@ -318,7 +316,7 @@ def plotVenn(DEGFile=None, FOLD=2, comparisons=None, degLabel="",  fontsize=14, 
     if degLabel == "total":
         mature_idCollections = _mature_idrateCollection(data)
 
-        labels = {k: "" for k in mature_idCollections}
+        labels = dict.fromkeys(mature_idCollections, "")
 
         for k in mature_idCollections:
             labels[k] += str(len(mature_idCollections[k]))
@@ -328,11 +326,11 @@ def plotVenn(DEGFile=None, FOLD=2, comparisons=None, degLabel="",  fontsize=14, 
 
         downmature_id = _mature_idrateCollection(Down)
 
-        labelsUp = {k: "" for k in upmature_id}
+        labelsUp = dict.fromkeys(upmature_id, "")
 
         for k in upmature_id:
             labelsUp[k] += str(len(upmature_id[k]))
-        labelsDown = {k: "" for k in downmature_id}
+        labelsDown = dict.fromkeys(downmature_id, "")
         for k in upmature_id:
             labelsDown[k] += str(len(downmature_id[k]))
 
@@ -451,21 +449,21 @@ def pcaPlot(ncountdf=None ,legends=False, fontsize=14, figsize=(12,12),dpi=300):
     legend_labels = []
 
     for i, sample in enumerate(pca_df.index):
-        scatter = ax.scatter(pca_df['PC1'].iloc[i], pca_df['PC2'].iloc[i], color=colors[i])
+        ax.scatter(pca_df['PC1'].iloc[i], pca_df['PC2'].iloc[i], color=colors[i])
         legend_labels.append(sample)
 
     # Add labels to data points with adjustText
     texts = [plt.text(pca_df['PC1'].iloc[i], pca_df['PC2'].iloc[i], sample, ha='right', va='bottom') for i, sample in enumerate(pca_df.index)]
 
     # Adjust text positions to avoid overlap
-    adjust_text(texts, arrowprops=dict(arrowstyle="-", color='k', lw=0.5))
+    adjust_text(texts, arrowprops={'arrowstyle': "-", 'color': 'k', 'lw': 0.5})
 
     if legends:
         # Organize legends in columns with a maximum of 10 legends per column
         num_legends_per_column = 15
         num_columns = len(legend_labels) // num_legends_per_column + 1
 
-        legend = ax.legend(legend_labels, loc='center left', bbox_to_anchor=(1, 0.5),
+        ax.legend(legend_labels, loc='center left', bbox_to_anchor=(1, 0.5),
                         title='Sample Legends', ncol=num_columns)
 
     # Remove top and right spines

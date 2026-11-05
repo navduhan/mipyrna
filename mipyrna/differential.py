@@ -63,10 +63,7 @@ def runDESeq2(countDF=None, targetFile=None, design='sample',combination=None,  
         raise ValueError("countDF, targetFile and combination are required")
 
     try:
-        if lib is None:
-            deseq = importr('DESeq2')
-        else:
-            deseq = importr('DESeq2', lib_loc=lib)
+        deseq = importr('DESeq2') if lib is None else importr('DESeq2', lib_loc=lib)
     except Exception:
         log.error("DESeq2 installation was not found ")
         raise
@@ -77,13 +74,8 @@ def runDESeq2(countDF=None, targetFile=None, design='sample',combination=None,  
 
     deseq_results=pd.DataFrame(mirna_id,columns=[mirna_column])
 
-    if subset:
-
-        loopSamples = np.array(range(len(combination))) #  if subset is True: Create an array of combination to subset count data
-
-    else:
-
-        loopSamples = np.array([1]) # If subset is False: then consider all count data as single set
+    # subset: one iteration per combination; otherwise all count data as a single set
+    loopSamples = np.array(range(len(combination))) if subset else np.array([1])
     
     # Now loopthrough combination in loopSamples 
 
@@ -93,9 +85,9 @@ def runDESeq2(countDF=None, targetFile=None, design='sample',combination=None,  
 
             c1,c2 = combination[j].split("-")
 
-            subDF = countDF.filter(regex='|'.join([c1,c2] )) # Subset the count data for one combination
+            subDF = countDF.filter(regex=f'{c1}|{c2}') # Subset the count data for one combination
 
-            subTF = targetFile[targetFile['sample'].str.contains('|'.join([c1,c2] ))] # Subset the target data for one combination
+            subTF = targetFile[targetFile['sample'].str.contains(f'{c1}|{c2}')] # Subset the target data for one combination
 
             with localconverter(get_conversion() + pandas2ri.converter):
 
@@ -210,13 +202,8 @@ def run_edgeR(countDF=None, targetFile=None, combination=None,  mirna_column='ma
 
     edgeR_results=pd.DataFrame(mirna_id,columns=[mirna_column])
 
-    if subset:
-
-        loopSamples = np.array(range(len(combination))) #  if subset is True: Create an array of combination to subset count data
-
-    else:
-
-        loopSamples = np.array([1]) # If subset is False: then consider all count data as single set
+    # subset: one iteration per combination; otherwise all count data as a single set
+    loopSamples = np.array(range(len(combination))) if subset else np.array([1])
     
     # Now loopthrough combination in loopSamples 
 
@@ -227,9 +214,7 @@ def run_edgeR(countDF=None, targetFile=None, combination=None,  mirna_column='ma
 
             c1,c2 = combination[j].split("-")
 
-            subDF = countDF.filter(regex='|'.join([c1,c2] )) # Subset the count data for one combination
-
-            subTF = targetFile[targetFile['sample'].str.contains('|'.join([c1,c2] ))] # Subset the target data for one combination
+            subTF = targetFile[targetFile['sample'].str.contains(f'{c1}|{c2}')] # Subset the target data for one combination
 
             groups = subTF['sample']
 
@@ -411,13 +396,9 @@ def degFilter(degDF=None, CompareList=None, FDR=0.05, FOLD=2, plot=True, figsize
 
     if plot== True:
 
-        category_names= ['UP', 'Down']
         labels= summary['Comparisons'].values.tolist()
 
-        if len(labels)>10:
-            hg = 15
-        else:
-            hg = len(labels)
+        hg = 15 if len(labels) > 10 else len(labels)
             
 
         updata= summary['Up_DEGs'].values.tolist()

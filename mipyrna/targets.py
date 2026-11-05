@@ -4,6 +4,7 @@ title: miRNA target prediction utilities
 
 Author: Naveen Duhan
 """
+import contextlib
 import importlib.resources as ir
 import os
 import shutil
@@ -20,7 +21,7 @@ log = MiPyRNALogger(mode='a', log='miRNA_target')
 def _parse_miranda_output(raw_output, parsed_output):
     records = []
     current = {"miRNA": None, "target_id": None, "score": None, "energy": None}
-    with open(raw_output, "r") as handle:
+    with open(raw_output) as handle:
         for line in handle:
             line = line.strip()
             if not line:
@@ -36,15 +37,11 @@ def _parse_miranda_output(raw_output, parsed_output):
                 if len(tokens) > 2:
                     for tok in tokens[2:]:
                         if tok.lower().startswith("score"):
-                            try:
+                            with contextlib.suppress(Exception):
                                 current["score"] = float(tok.split(":")[-1])
-                            except Exception:
-                                pass
                         if tok.lower().startswith("energy"):
-                            try:
+                            with contextlib.suppress(Exception):
                                 current["energy"] = float(tok.split(":")[-1])
-                            except Exception:
-                                pass
                 records.append(current.copy())
             elif "Score" in line or "Energy" in line:
                 if not records:
@@ -53,15 +50,11 @@ def _parse_miranda_output(raw_output, parsed_output):
                 for i, token in enumerate(parts):
                     tk = token.lower()
                     if tk == "score" and i + 1 < len(parts):
-                        try:
+                        with contextlib.suppress(Exception):
                             records[-1]["score"] = float(parts[i + 1])
-                        except Exception:
-                            pass
                     if tk == "energy" and i + 1 < len(parts):
-                        try:
+                        with contextlib.suppress(Exception):
                             records[-1]["energy"] = float(parts[i + 1])
-                        except Exception:
-                            pass
 
     df = pd.DataFrame(records).dropna(subset=["miRNA", "target_id"], how="any")
     if len(df) == 0:
@@ -80,7 +73,7 @@ def run_targets(miRNA_file=None, configFile=None, mRNA_file=None, slurm=False, o
         config = mu.parse_config_file(ir.files("mipyrna").joinpath("param/miranda.ini"))
         log.info("Using default config file miranda.ini")
 
-    miranda_config = config[list(config.keys())[0]]
+    miranda_config = config[next(iter(config.keys()))]
     args = " ".join(miranda_config)
 
     out = "targets_raw"

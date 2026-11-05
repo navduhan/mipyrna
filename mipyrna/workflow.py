@@ -34,7 +34,7 @@ def _combine_fastas(files, output):
         for fpath in files:
             if fpath is None or not os.path.exists(fpath):
                 continue
-            with open(fpath, "r") as fh:
+            with open(fpath) as fh:
                 out.write(fh.read().rstrip() + "\n")
     return output
 

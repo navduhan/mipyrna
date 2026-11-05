@@ -77,11 +77,9 @@ def read_input_file(infile, inpath, paired = False):
         for i in factors:
             for j in factors:
 
-                if i != j:
+                if i != j and j+"-"+i not in combinations:
 
-                    if j+"-"+i not in combinations:
-
-                        combinations.append(i+"-"+j)
+                    combinations.append(i+"-"+j)
     except Exception:
 
         log.error("Please provide a valid input file")
@@ -100,7 +98,7 @@ def read_input_file(infile, inpath, paired = False):
 
             sample.append(s[1])
 
-        targets = pd.DataFrame(samplename,index=[i for i in samplename])
+        targets = pd.DataFrame(samplename,index=list(samplename))
 
         targets = targets.assign(sample=sample)
 
@@ -163,7 +161,7 @@ def parse_config_file(infile):
                 source_name = getattr(handle, "name", source_name)
                 config.read_file(handle)
         else:
-            with open(infile, "r", encoding="utf-8") as handle:
+            with open(infile, encoding="utf-8") as handle:
                 source_name = getattr(handle, "name", source_name)
                 config.read_file(handle)
 
@@ -182,7 +180,7 @@ def parse_config_file(infile):
 
                 temp_dict[option] = cc
 
-            for k, value in temp_dict.items():
+            for value in temp_dict.values():
 
                 if 'NA' not in value:
 
@@ -239,8 +237,10 @@ def clusterRun(job_name='pysirna',sout="pysirna", serror="pysirna", partition='c
     return job_id
 
 
-def local_run(program=None, command="", outdir=".", message={}):
+def local_run(program=None, command="", outdir=".", message=None):
 
+    if message is None:
+        message = {}
     try:
 
         with open(os.path.join(outdir, f"{program}.out"), 'w+') as fout:
@@ -266,11 +266,7 @@ def check_status(job_id):
 
     data = list(re.split(r"\s+ ", d))
 
-    if len(data)==6:
-
-        return True
-
-    return False
+    return len(data) == 6
 
 def get_cpu():
 
@@ -409,7 +405,7 @@ def preprocess(df, classLabel,size):
     return aa, _classLabels
 
 def replace_U_with_T(input_file, output_file):
-    with open(input_file, 'r') as f_in:
+    with open(input_file) as f_in:
         fasta_lines = f_in.readlines()
 
     # Iterate through each line in the FASTA file

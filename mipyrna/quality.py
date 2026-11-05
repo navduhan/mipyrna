@@ -1,6 +1,4 @@
-
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 """
 :Title: This modules contains read quality check function
@@ -58,15 +56,9 @@ def fastqcRun(sampleDict=None, configFile=None,slurm=False, mem=10, cpu=8, task=
 
         log.info("Using default config file fastqc.ini")
 
-    fastqc_config = config[list(config.keys())[0]]
+    fastqc_config = config[next(iter(config.keys()))]
 
-    if afterTrim:
-
-        out ='trim_fastqc_results'
-
-    else:
-
-        out = "fastqc_results"
+    out = 'trim_fastqc_results' if afterTrim else "fastqc_results"
 
     if os.path.exists(outDir):
 
@@ -124,7 +116,7 @@ def fastqcRun(sampleDict=None, configFile=None,slurm=False, mem=10, cpu=8, task=
                 fastqcOut[key]=[value[0], value[1], r1, r2]
         else:
             try:
-                inputFile = value[2]
+                value[2]
 
             except Exception:
 
