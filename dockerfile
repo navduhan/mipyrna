@@ -19,10 +19,10 @@ RUN conda env create -f mipyrna_environment.yaml
 
 # Activate the conda environment
 # Note: The activation command is generally not needed in RUN instructions, so we directly use conda.
-RUN echo "source activate mipyrna-0.2" > ~/.bashrc
+RUN echo "source activate mipyrna-0.5" > ~/.bashrc
 
 # Install pySeqRNA package
-RUN /opt/conda/bin/conda run -n mipyrna-0.2 pip install .
+RUN /opt/conda/bin/conda run -n mipyrna-0.5 pip install .
 
 WORKDIR /home
 

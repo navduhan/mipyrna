@@ -198,7 +198,7 @@ Released under the terms of GNU General Public Licence v3
 
 In case of technical problems (bugs etc.) please contact Naveen Duhan (naveen.duhan@usu.edu)
 
-For any Questions on the scientific aspects of the miPyRNA-0.2 method please contact:
+For any Questions on the scientific aspects of the miPyRNA-0.5 method please contact:
 
 Rakesh Kaundal, (rkaundal@usu.edu)
 

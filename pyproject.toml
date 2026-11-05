@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "miPyRNA"
-version = "0.1"
+version = "0.5"
 dynamic = ["dependencies"]
 description = "miPyRNA a python based Small RNA Sequencing analysis package"
 readme = "README.md"
