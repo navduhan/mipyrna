@@ -194,7 +194,7 @@ Written by Naveen Duhan (naveen.duhan@usu.edu),
 
 Kaundal Bioinformatics Lab, Utah State University,
 
-Released under the terms of GNU General Public Licence v3
+Released under the MIT License (see LICENSE)
 
 In case of technical problems (bugs etc.) please contact Naveen Duhan (naveen.duhan@usu.edu)
 
