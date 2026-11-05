@@ -1,14 +1,13 @@
-from Bio import SeqIO, Seq
-import HTSeq
 import gzip
+import multiprocessing
 import os
 import re
-import numpy as np
+
+import HTSeq
 import pandas as pd
 import pyfaidx as pf
+from Bio import Seq, SeqIO
 from tqdm import tqdm
-import multiprocessing
-
 
 
 class Read_process:
@@ -17,7 +16,6 @@ class Read_process:
 
         self.ref = reference
 
-        return
 
     def _collapse_process_sample(self, key, sample, outdir):
         collapsed_reads = {}
@@ -59,7 +57,7 @@ class Read_process:
 
         return outreads
 
-    def process_sample(slef, key, sample, alignType):
+    def process_sample(self, key, sample, alignType):
         areads = []
         count = 1
 
@@ -80,15 +78,15 @@ class Read_process:
             df.columns = ['read', 'strand', 'chrom', 'start', 'mature', 'distance', 'num_align', 'info']
 
             for i, row in df.iterrows():
-                if row.strand == "-":
-                    row.mature = row.mature[::-1]
-                    row.mature = row.mature.translate(str.maketrans("ACGTN", "TGCAN")) 
-                gseq = list(row.mature)
-                edit = ["m"] * len(row.mature)
+                mature = str(row['mature'])
+                if str(row['strand']) == "-":
+                    mature = mature[::-1].translate(str.maketrans("ACGTN", "TGCAN"))
+                gseq = list(mature)
+                edit = ["m"] * len(mature)
                 mm = 0
-                if not pd.isna(row['info']):
-                    data = row['info']
-                    changes = row['info'].split(",")
+                data = row['info']
+                if isinstance(data, str):
+                    changes = data.split(",")
                     for change in changes:
                         if re.match(r'(\d+):(\w+)>\w+', change):
                             mm += 1
@@ -105,15 +103,15 @@ class Read_process:
                 else:
                     read_count = 1
                 start = int(row.start) + 1
-                end = start + len(row.mature)
+                end = start + len(mature)
                 areads.append([
                     read_name,
-                    row.mature,
+                    mature,
                     row.chrom,
                     row.strand,
                     start,
                     end,
-                    len(row.mature),
+                    len(mature),
                     count,
                     read_count,
                     count

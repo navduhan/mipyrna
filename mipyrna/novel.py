@@ -1,18 +1,19 @@
-import RNA
-import re
 import os
-import sys
+import re
 import shutil
-import pandas as pd
-import numpy as np
+import sys
+
 import forgi.graph.bulge_graph as fgb
-from  mipyrna.reads import Read_process
-from keras.models import load_model
-import importlib.resources as ir
+import numpy as np
+import pandas as pd
+import RNA
+
+from mipyrna import model_store as ms
 from mipyrna import utility as mu
 from mipyrna.features import Precursor_Features
 from mipyrna.logger import MiPyRNALogger
 from mipyrna.mirbase import MirBase
+from mipyrna.reads import Read_process
 
 log = MiPyRNALogger(mode='a', log='novel')
 
@@ -56,15 +57,14 @@ class Novel_miRNA:
         self.require_star = require_star
         self.rng = np.random.default_rng(random_seed)
 
-        return
 
     def get_precursor_structure(self, seq):
 
         try:
             x = RNA.fold(seq)
-        except Exception as e:
-            print (e)
-            return
+        except (TypeError, ValueError, RuntimeError) as exc:
+            log.warning(f"RNA folding failed: {exc}")
+            raise
         return x
 
     def get_bulge(self, seq):
@@ -170,22 +170,15 @@ class Novel_miRNA:
         return round(score, 4)
 
     def predict_precursor(self, df):
-        positives = df['features'].values.tolist()
-        if self.species_type=='plants':
-            file = str(ir.files("mipyrna").joinpath("data/plants_F5_100_train.h5"))
-        if self.species_type == 'animals':
-            file = str(ir.files("mipyrna").joinpath("data/animals_F5_train.h5"))
-       
-        myModel=load_model(file,compile=False)
-        samples, labels = mu.preprocess(positives, np.array([1,0]), 128) 
-        Samples=samples.reshape(samples.shape[0], 1, samples.shape[1],1)
-        prob=myModel.predict(Samples)
-        prob = prob.tolist()
-        df= pd.DataFrame(prob, columns=['miRNA', 'Non-miRNA'])
-        
-        return df
+
+        prob = ms.predict(df['features'].tolist(), self.species_type)
+
+        return pd.DataFrame({'miRNA': prob, 'Non-miRNA': 1.0 - prob})
 
     def get_putative_precursor(self, filtered_cluster=None,  other=None,  seqlength=20, loop=20, precursor_step= 10 ):
+
+        if filtered_cluster is None:
+            raise ValueError("filtered_cluster is required")
 
         putative_precursor = []
         
@@ -200,10 +193,7 @@ class Novel_miRNA:
         if mature_mirna is None:
             mature_mirna = x.seq
     
-        if mature_mirna is not None:
-            seqlen = len(mature_mirna)
-        else:
-            seqlen = seqlength
+        seqlen = len(mature_mirna)
 
         # get 5' precursor
 
@@ -227,7 +217,8 @@ class Novel_miRNA:
                 
                 if mature_status is None:
                     continue
-            except Exception:
+            except (TypeError, ValueError, RuntimeError) as exc:
+                log.warning(f"Skipped precursor candidate at {chrom}:{start}: {exc}")
                 continue
             
             k = Precursor_Features(precursor_seq)
@@ -260,7 +251,8 @@ class Novel_miRNA:
                 
                 if mature_status is None:
                     continue
-            except Exception:
+            except (TypeError, ValueError, RuntimeError) as exc:
+                log.warning(f"Skipped precursor candidate at {chrom}:{start}: {exc}")
                 continue
             
 
@@ -386,11 +378,11 @@ class Novel_miRNA:
             
             blast_out = os.path.join(blast, "blast_mature_vs_miRbase.txt")
             blastn_command = f"blastn -db {mirbase_data['mature']} -query {novel_mature} -evalue 100 -out {blast_out} -outfmt 6 -word_size 4"
-            mu.local_run(program='blastn', command=blastn_command, outdir=blast, message=f"similarity search against miRbase")
+            mu.local_run(program='blastn', command=blastn_command, outdir=blast, message="similarity search against miRbase")
 
         blast_results = pd.read_csv(blast_out, sep="\t", names=['Novel_ID', 'Known_ID', 'pident', 'length', 'mismatch', 'gapopen', 'qstart','qend', 'sstart', 'send', 'evalue', 'bitscore'])
 
-        filterd_results = blast_results[(blast_results.qstart<2) & (blast_results.length>19) &(blast_results.pident>94)].drop_duplicates('Novel_ID') 
+        filterd_results = pd.DataFrame(blast_results[(blast_results.qstart<2) & (blast_results.length>19) &(blast_results.pident>94)]).drop_duplicates(subset=['Novel_ID']) 
 
         known_miRNAs_dataframe = filterd_results[['Novel_ID', 'Known_ID']]
 
@@ -425,6 +417,9 @@ class Novel_miRNA:
 
     def get_novel_miRNA(self):
        
+        if self.samples is None:
+            raise ValueError("samples is required")
+
         outputs = []
         
         mirna_temp = mu.make_directory(os.path.join(self.outdir, "temp"))

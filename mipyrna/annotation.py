@@ -5,11 +5,12 @@ Functional annotation and enrichment helper utilities.
 """
 
 import os
-import requests
-import pandas as pd
 
-from mipyrna.logger import MiPyRNALogger
+import pandas as pd
+import requests
+
 from mipyrna import utility as mu
+from mipyrna.logger import MiPyRNALogger
 
 log = MiPyRNALogger(mode='a', log='annotation')
 
@@ -61,4 +62,4 @@ def run_enrichment(targets_file=None, organism=None, outdir=".", sources=None, u
     out_path = os.path.join(annotation_dir, "enrichment_results.tsv")
     out_df.to_csv(out_path, sep="\t", index=False)
 
-    return {"enrichment_results": out_path, "count_terms": int(len(out_df))}
+    return {"enrichment_results": out_path, "count_terms": len(out_df)}

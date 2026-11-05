@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 """
 :Title: This module function mature_idrate visualization 
@@ -10,20 +9,18 @@
 """
 
 
-import pandas as pd 
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.colors import ListedColormap
-import seaborn as sns
-import matplotlib.patches as patches
 from itertools import chain
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import make_pipeline
-from sklearn.decomposition import PCA
+
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 import seaborn as sns
 from adjustText import adjust_text
+from matplotlib import patches
+from matplotlib.colors import ListedColormap
+from sklearn.decomposition import PCA
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 
 
 def plotVolcano(degDF=None, comp=None, FOLD=2, pValue=0.05, color=('red', 'grey', 'green'), dim=(8, 5), font=14, dotsize=10, markerType='o', alpha=0.5):
@@ -40,6 +37,9 @@ def plotVolcano(degDF=None, comp=None, FOLD=2, pValue=0.05, color=('red', 'grey'
     :param markeType: Shape to use. Defaults to 'o'.
     :param alpha: Transparency of plot. Defaults to 0.5.
     """
+
+    if degDF is None or comp is None:
+        raise ValueError("degDF and comp are required")
 
     PVAL = "pvalue(" + comp + ")"
     LFC = "logFC(" + comp + ")"
@@ -99,6 +99,10 @@ def plotMA(degDF=None, countDF=None, comp=None,FOLD=2, FDR=0.05, color=('red','g
     :param alpha: Transparency of plot. Defaults to 0.5.
     """
 
+    if degDF is None or countDF is None or comp is None:
+        raise ValueError("degDF, countDF and comp are required")
+
+    fig = None
     LFC = "logFC("+comp+")"
     PVAL = "FDR("+comp+")"
     # baseMean ="baseMean("+comp+")"
@@ -185,6 +189,9 @@ def plotHeatmap(degDF= None, combinations=None, num=50, figdim=(12,10), extraCol
     :param type: Heatmap to create on counts/degs. 
     """
 
+    if degDF is None or combinations is None:
+        raise ValueError("degDF and combinations are required")
+
     # Need to add argument for all deg hetamp.
     if extraColumns:
         
@@ -219,7 +226,10 @@ def plotHeatmap(degDF= None, combinations=None, num=50, figdim=(12,10), extraCol
         final=pd.concat([topmature_id,botmature_id])
         fin = final[degDF.columns]
 
-        
+    else:
+        raise ValueError(f"type must be 'degs' or 'counts', got {type!r}")
+
+    
     fig, ax = plt.subplots(figsize=figdim)
 
     sns.heatmap(fin, cmap="seismic",ax=ax, cbar=True, cbar_kws={"shrink": .30})
@@ -251,6 +261,9 @@ def _insertText(fig, ax, x, y, text, fontsize=None, col="black", ha="center", va
         color=col)
 
 def _mature_idrateCollection(data=None):
+    if data is None:
+        raise ValueError("data is required")
+
     N = len(data)
     mature_idsData = [set(data[i]) for i in range(N)]  # sets for separate groups
     Allmature_ids = set(chain(*data))                     # union of all sets
@@ -285,6 +298,9 @@ def plotVenn(DEGFile=None, FOLD=2, comparisons=None, degLabel="",  fontsize=14, 
 
     :param dpi: Figure DPI resolution. Defaults to 300.
     """
+    if DEGFile is None or comparisons is None:
+        raise ValueError("DEGFile and comparisons are required")
+
     global labelsUp, labelsDown, labels, fig
     data = []
     Up = []
@@ -363,10 +379,10 @@ def plotVenn(DEGFile=None, FOLD=2, comparisons=None, degLabel="",  fontsize=14, 
 
         for d, l in zip(dataPoints, labelPoints):
             if degLabel != "total":
-                _insertText(fig, ax, d[0], d[1], labelsUp.get(l[0], ''), col="blue", fontsize=fontsize, fontweight='normal')
-                _insertText(fig, ax, d[0], (d[1] - 0.03), labelsDown.get(l[0], ''), col="red", fontsize=fontsize, fontweight='normal')
+                _insertText(fig, ax, d[0], d[1], labelsUp.get(l[0], ''), col="blue", fontsize=fontsize, fontweight=400)
+                _insertText(fig, ax, d[0], (d[1] - 0.03), labelsDown.get(l[0], ''), col="red", fontsize=fontsize, fontweight=400)
             else:
-                _insertText(fig, ax, d[0], d[1], labels.get(l[0], ''), col="blue", fontsize=fontsize, fontweight='normal')
+                _insertText(fig, ax, d[0], d[1], labels.get(l[0], ''), col="blue", fontsize=fontsize, fontweight=400)
         # legend
         _insertText(fig, ax, 0.15, 0.87, comparisons[0], fontsize=fontsize, fontweight=600, ha="right", va="bottom")
         _insertText(fig, ax, 0.85, 0.87, comparisons[1], fontsize=fontsize, fontweight=600, ha="left", va="bottom")
@@ -414,6 +430,9 @@ def pcaPlot(ncountdf=None ,legends=False, fontsize=14, figsize=(12,12),dpi=300):
 
     # Transpose the normalize counts to make sample as rows and mature_ids as columns
 
+    if ncountdf is None:
+        raise ValueError("ncountdf is required")
+
     ndf = ncountdf.T
 
     pca = make_pipeline(StandardScaler(), PCA())
@@ -454,7 +473,7 @@ def pcaPlot(ncountdf=None ,legends=False, fontsize=14, figsize=(12,12),dpi=300):
     ax.spines['right'].set_visible(False)
 
 
-    ax.xlabel('Principal Component 1 (PC1)', fontsize = fontsize)
-    ax.ylabel('Principal Component 2 (PC2)', fontsize = fontsize)
+    ax.set_xlabel('Principal Component 1 (PC1)', fontsize = fontsize)
+    ax.set_ylabel('Principal Component 2 (PC2)', fontsize = fontsize)
 
     return fig

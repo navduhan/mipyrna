@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 '''
 :Title: This module finds differentially expressed genes from raw read counts
@@ -9,28 +8,27 @@
 :Author: Naveen Duhan
 '''
 
-from itertools import combinations
-import pandas as pd
-import numpy as np
 import logging
-import requests
-from io import StringIO, TextIOWrapper
-from xml.etree import ElementTree
-from future.utils import native_str
-from mipyrna.logger import MiPyRNALogger
-import rpy2.robjects as robjects
-from rpy2.robjects import pandas2ri, numpy2ri, Formula
-from rpy2.robjects.conversion import localconverter, py2rpy, get_conversion
-from rpy2.robjects.packages import importr
+from typing import Any
+
 import matplotlib.pyplot as plt
-from matplotlib.ticker import MaxNLocator
+import numpy as np
+import pandas as pd
+from rpy2 import robjects
 from rpy2.rinterface_lib.callbacks import logger as rpy2_logger
+from rpy2.robjects import Formula, numpy2ri, pandas2ri
+from rpy2.robjects.conversion import get_conversion, localconverter, py2rpy
+from rpy2.robjects.packages import importr
+
+from mipyrna.logger import MiPyRNALogger
 
 rpy2_logger.setLevel(logging.ERROR)
 
 log = MiPyRNALogger(mode='a', log="diff")
 
-to_dataframe = robjects.r('function(x) data.frame(x)')
+r: Any = robjects.r
+
+to_dataframe = r('function(x) data.frame(x)')
 
 numpy2ri.activate()
 
@@ -61,6 +59,9 @@ def runDESeq2(countDF=None, targetFile=None, design='sample',combination=None,  
         
 
     """
+    if countDF is None or targetFile is None or combination is None:
+        raise ValueError("countDF, targetFile and combination are required")
+
     try:
         if lib is None:
             deseq = importr('DESeq2')
@@ -68,6 +69,7 @@ def runDESeq2(countDF=None, targetFile=None, design='sample',combination=None,  
             deseq = importr('DESeq2', lib_loc=lib)
     except Exception:
         log.error("DESeq2 installation was not found ")
+        raise
 
 
     mirna_id = countDF[[mirna_column]].values
@@ -77,7 +79,7 @@ def runDESeq2(countDF=None, targetFile=None, design='sample',combination=None,  
 
     if subset:
 
-        loopSamples = np.array(range(0,len(combination))) #  if subset is True: Create an array of combination to subset count data
+        loopSamples = np.array(range(len(combination))) #  if subset is True: Create an array of combination to subset count data
 
     else:
 
@@ -188,6 +190,9 @@ def run_edgeR(countDF=None, targetFile=None, combination=None,  mirna_column='ma
 
     :rtype: A datafram containing all gene differantial expression in all combinations.
     """
+    if countDF is None or targetFile is None or combination is None:
+        raise ValueError("countDF, targetFile and combination are required")
+
     try:
         if lib is None:
             edgeR = importr('edgeR')
@@ -198,6 +203,7 @@ def run_edgeR(countDF=None, targetFile=None, combination=None,  mirna_column='ma
             
     except Exception:
         log.error("edgeR installation not found. Please install edgeR")
+        raise
 
     mirna_id = countDF[[mirna_column]].values
     countDF.set_index(mirna_column, inplace=True)
@@ -206,7 +212,7 @@ def run_edgeR(countDF=None, targetFile=None, combination=None,  mirna_column='ma
 
     if subset:
 
-        loopSamples = np.array(range(0,len(combination))) #  if subset is True: Create an array of combination to subset count data
+        loopSamples = np.array(range(len(combination))) #  if subset is True: Create an array of combination to subset count data
 
     else:
 
@@ -237,17 +243,17 @@ def run_edgeR(countDF=None, targetFile=None, combination=None,  mirna_column='ma
     
             dds = edgeR.calcNormFactors(dds)
             
-            robjects.r.assign('group', group)
+            r.assign('group', group)
 
-            robjects.r.assign('dds', dds)
+            r.assign('dds', dds)
 
-            design = robjects.r('model.matrix(~0+dds$samples$group,data=dds$samples)')
+            design = r('model.matrix(~0+dds$samples$group,data=dds$samples)')
 
             design = pd.DataFrame(design)
 
-            col= robjects.r('levels(dds$samples$group)')
+            col= r('levels(dds$samples$group)')
 
-            design.columns= col
+            design.columns = list(col)
 
             design =design.to_records(index=False)
 
@@ -279,17 +285,17 @@ def run_edgeR(countDF=None, targetFile=None, combination=None,  mirna_column='ma
     
             dds = edgeR.calcNormFactors(dds)
             
-            robjects.r.assign('group', group)
+            r.assign('group', group)
 
-            robjects.r.assign('dds', dds)
+            r.assign('dds', dds)
 
-            design = robjects.r('model.matrix(~0+dds$samples$group,data=dds$samples)')
+            design = r('model.matrix(~0+dds$samples$group,data=dds$samples)')
 
             design = pd.DataFrame(design)
 
-            col= robjects.r('levels(dds$samples$group)')
+            col= r('levels(dds$samples$group)')
 
-            design.columns= col
+            design.columns = list(col)
 
             design =design.to_records(index=False)
             
@@ -353,6 +359,10 @@ def degFilter(degDF=None, CompareList=None, FDR=0.05, FOLD=2, plot=True, figsize
 
     :param plot: True if want to plot DEGs per sample on barplot. Defaults to True.
     """
+    if degDF is None or CompareList is None:
+        raise ValueError("degDF and CompareList are required")
+
+    fig = None
     Up = []
     Down = []
     Total = []
@@ -425,7 +435,7 @@ def degFilter(degDF=None, CompareList=None, FDR=0.05, FOLD=2, plot=True, figsize
 
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
-        ax.spines['left'].set_bounds((0, len(my_range)))
+        ax.spines['left'].set_bounds(0, len(my_range))
         # add some space between the axis and the plot
         ax.spines['left'].set_position(('outward', 8))
         ax.spines['bottom'].set_position(('outward', 5))

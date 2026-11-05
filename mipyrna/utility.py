@@ -5,17 +5,18 @@ title: miPyRNA utility functions
 Author: Naveen Duhan
 """
 
-import os, sys
-import re
-import math
-import pandas as pd
-import numpy as np
-import pyfaidx
-import psutil
-import subprocess
 import configparser
+import math
+import os
+import re
+import subprocess
+import sys
+
+import numpy as np
 import pandas as pd
-from Bio import SeqIO, Seq
+import psutil
+import pyfaidx
+from Bio import Seq, SeqIO
 
 from mipyrna.logger import MiPyRNALogger
 
@@ -106,6 +107,7 @@ def read_input_file(infile, inpath, paired = False):
     except Exception:
 
         log.error("Please provide a valid input file")
+        raise
     
     finally:
 
@@ -221,10 +223,9 @@ def clusterRun(job_name='pysirna',sout="pysirna", serror="pysirna", partition='c
     try:
         if dep != '':
             
-            dep = '--dependency=afterok:{} --kill-on-invalid-dep=yes '.format(dep)
+            dep = f'--dependency=afterok:{dep} --kill-on-invalid-dep=yes '
 
-        sbatch_command = 'sbatch -J {} -o {}.out -e {}.err -t {}:00:00 -p {} --mem={}000 --cpus-per-task={} --ntasks={} --wrap="{}" {}'.format(
-            job_name, sout, serror, time, partition, mem, cpu, tasks,  command, dep)
+        sbatch_command = f'sbatch -J {job_name} -o {sout}.out -e {serror}.err -t {time}:00:00 -p {partition} --mem={mem}000 --cpus-per-task={cpu} --ntasks={tasks} --wrap="{command}" {dep}'
 
         sbatch_response = subprocess.getoutput(sbatch_command)
 
@@ -233,11 +234,12 @@ def clusterRun(job_name='pysirna',sout="pysirna", serror="pysirna", partition='c
     except Exception:
 
         log.error("Job submission failed")
+        raise
 
     return job_id
 
 
-def local_run(program=None, command=None, outdir=None, message={}):
+def local_run(program=None, command="", outdir=".", message={}):
 
     try:
 
@@ -249,7 +251,6 @@ def local_run(program=None, command=None, outdir=None, message={}):
         
         log.error("Job sumission failed")
         
-    return
 
 def check_status(job_id):
     """
@@ -281,7 +282,7 @@ def get_cpu():
     :rtype: int with 80 % of CPU count
     """
 
-    return math.floor(psutil.cpu_count()*0.8)
+    return math.floor((psutil.cpu_count() or 1)*0.8)
 
 def replace_cpu(args, args2):
     '''

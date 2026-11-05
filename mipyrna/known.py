@@ -7,14 +7,15 @@ Author: Naveen Duhan
 '''
 import os
 import shutil
-from waiting import wait
-from Bio import SeqIO
-from mipyrna.aligner import Bowtie_Aligner
-from mipyrna import utility as mu
-from mipyrna.reads import Read_process
-from mipyrna.mirbase import MirBase
+import subprocess
 
-class Known_miRNA():
+from mipyrna import utility as mu
+from mipyrna.aligner import Bowtie_Aligner
+from mipyrna.mirbase import MirBase
+from mipyrna.reads import Read_process
+
+
+class Known_miRNA:
 
     def __init__(self, samples=None, species=None,species_type='plants', outdir=".", slurm = False):
         
@@ -24,7 +25,6 @@ class Known_miRNA():
         self.species_type = species_type
         self.outdir = mu.make_directory(os.path.join(outdir, "known_miRNA_results"))
 
-        return
     
     def _extract_known_unmapped(self, samples, rfam_samples):
         
@@ -41,8 +41,11 @@ class Known_miRNA():
             outfile=  f"{output}/{k}_filtered.fasta"
             
             execPATH = shutil.which('faSomeRecords')
-            
-            os.system(f"{execPATH} -exclude {sample[2]} {k}.txt {outfile}")
+
+            if execPATH is None:
+                raise FileNotFoundError("faSomeRecords (UCSC kent tools) was not found in PATH")
+
+            subprocess.run([execPATH, "-exclude", sample[2], f"{k}.txt", outfile], check=True)
             
             os.remove(f"{k}.txt")
             

@@ -7,21 +7,41 @@ Date: August 23, 2022
 """
 
 # import statements
-import RNA
+from __future__ import annotations
+
 import forgi.graph.bulge_graph as fgb
+import RNA
+
+# The nucleotide/structure-triplet encoding crosses the middle base of each 3-nt
+# window with the dot-bracket pattern of that window: 4 bases x 8 patterns = 32
+# columns, in the order generate_triplets() emits them.
+TRIPLET_BASES = ('A', 'G', 'U', 'C')
+TRIPLET_STRUCTURES = ('(((', '((.', '(..', '(.(',
+                      '.((', '.(.', '..(', '...')
 
 
 
 class Precursor_Features:
 
-    def __init__(self, sequence=None):
+    def __init__(self, sequence: str | None = None):
         """Feature Generation Class
 
         Args:
-            sequence (_type_, optional): _description_. Defaults to None.
+            sequence (str | None, optional): RNA sequence. Defaults to None.
         """
 
+        if sequence is None:
+            raise ValueError("a sequence is required")
+
         self.seq = sequence.replace('T', 'U')
+
+        self.drop_reason: str | None = None
+
+        self.fallback_note: str | None = None
+
+        self.buldge_graph: fgb.BulgeGraph | None = None
+        self.structure: str | None = None
+        self.mfe: float | None = None
 
         try:
 
@@ -32,10 +52,18 @@ class Precursor_Features:
             self.structure = data['structure']
 
             self.mfe = data['mfe']
-        except Exception:
-            pass
+        except (ValueError, TypeError, RuntimeError, IndexError, KeyError) as exc:
+            # Keep the reason so callers can report why a sequence was skipped.
+            self.buldge_graph = None
+            self.drop_reason = f"structure prediction failed: {type(exc).__name__}: {exc}"
 
-        return
+
+    def _require_bulge_graph(self) -> fgb.BulgeGraph:
+        if self.buldge_graph is None:
+            raise RuntimeError("structure prediction did not produce a bulge graph")
+
+        return self.buldge_graph
+
 
     def get_buldge_graph(self):
 
@@ -47,36 +75,40 @@ class Precursor_Features:
 
     def find_biggest_stem(self):
 
+        graph = self._require_bulge_graph()
+
         big_stem = (-1, 'a')
 
-        for stem in self.buldge_graph.stem_iterator():
+        for stem in graph.stem_iterator():
 
-            if self.buldge_graph.stem_length(stem) > big_stem[0]:
+            if graph.stem_length(stem) > big_stem[0]:
 
-                big_stem = (self.buldge_graph.stem_length(stem), stem)
+                big_stem = (graph.stem_length(stem), stem)
 
         return big_stem[0]
 
     def find_stem_pairs(self):
 
+        # forgi >= 2.0 returns bg.seq as a 1-based Sequence object, and
+        # stem_bp_iterator() yields 1-based positions. Convert once to a plain
+        # string so p[0] - 1 addresses the base at position p[0].
+        graph = self._require_bulge_graph()
+
+        sequence = str(graph.seq)
+
         stem_pairs = []
 
-        try:
+        for stem in graph.stem_iterator():
 
-            for stem in self.buldge_graph.stem_iterator():
+            for p in graph.stem_bp_iterator(stem):
 
-                for p in self.buldge_graph.stem_bp_iterator(stem):
-
-                    stem_pairs.append(
-                        (self.buldge_graph.seq[p[0]-1], self.buldge_graph.seq[p[1]-1]))
-        except Exception:
-            stem_pairs = []
+                stem_pairs.append((sequence[p[0] - 1], sequence[p[1] - 1]))
 
         return {'stem_pairs': stem_pairs, 'stem_length': len(stem_pairs)}
 
     def find_matched_stem(self):
 
-        base_pairs = {'A': 'T', 'T': 'A','U': 'A', 'A': 'U', 'G': 'C', 'C': 'G', 'R': 'R','K': 'K','Y': 'Y', 'S': 'S', 'M': 'M', 'W': 'W', 'H': 'H', 'B': 'B', 'V': 'V', 'D': 'D', 'N': 'N'}
+        base_pairs = {'A': 'U', 'T': 'A', 'U': 'A', 'G': 'C', 'C': 'G', 'R': 'R','K': 'K','Y': 'Y', 'S': 'S', 'M': 'M', 'W': 'W', 'H': 'H', 'B': 'B', 'V': 'V', 'D': 'D', 'N': 'N'}
         matched_stem = []
 
         for pair in self.find_stem_pairs()['stem_pairs']:
@@ -94,15 +126,20 @@ class Precursor_Features:
     def find_loops(self):
 
         try:
-            h0seq = self.buldge_graph.get_define_seq_str('h0')[0]
+            graph = self._require_bulge_graph()
 
-            loops = len(list(self.buldge_graph.hloop_iterator()))
+            h0seq = graph.get_define_seq_str('h0')[0]
 
-            loop_length = self.buldge_graph.get_bulge_dimensions('h0')[0]
+            loops = len(list(graph.hloop_iterator()))
+
+            loop_length = graph.get_bulge_dimensions('h0')[0]
 
             loop_gc = sum(1 for x in h0seq if x in ['G', 'C'])/len(h0seq)*100
 
-        except:
+        except (ValueError, TypeError, RuntimeError, IndexError, KeyError, ZeroDivisionError) as exc:
+
+            # Zero-filled rather than fatal, but recorded so it is not silent.
+            self.fallback_note = f"loop features zero-filled: {type(exc).__name__}: {exc}"
 
             h0seq = ''
 
@@ -116,20 +153,23 @@ class Precursor_Features:
 
     def find_bulges(self):
 
+        graph = self._require_bulge_graph()
+
         bulges = []
 
-        for bulge in self.buldge_graph.iloop_iterator():
+        for bulge in graph.iloop_iterator():
 
-            bulges.append(self.buldge_graph.get_bulge_dimensions(bulge))
+            bulges.append(graph.get_bulge_dimensions(bulge))
 
         total_bulges = len(bulges)
 
         try:
             longest_bulge = max(max(zip(*bulges)))
-        except:
+        except (ValueError, TypeError):
+
             longest_bulge = 0
 
-        matched_bulges = [True if i[0] == i[1] else False for i in bulges]
+        matched_bulges = [i[0] == i[1] for i in bulges]
 
         symmetric_bulge = matched_bulges.count(True)
 
@@ -203,10 +243,9 @@ class Precursor_Features:
 
     def generate_triplets(self):
 
-        structure_string = ['(((', '((.', '(..', '(.(',
-                            '.((', '.(.', '..(', '...']
+        structure_string = list(TRIPLET_STRUCTURES)
 
-        nuc = ['A', 'G', 'U', 'C']
+        nuc = list(TRIPLET_BASES)
 
         structure_triplets = {}
 
@@ -215,6 +254,9 @@ class Precursor_Features:
             for j in structure_string:
 
                 structure_triplets[i+j] = 0
+
+        if self.structure is None:
+            raise RuntimeError("structure prediction did not produce a dot-bracket string")
 
         self.structure = self.structure.replace(')', '(')
 
@@ -234,9 +276,15 @@ class Precursor_Features:
 
         nfeatures = {}
 
+        if self.buldge_graph is None:
+
+            return
+
         stems = self.find_stem_pairs()
 
         if stems['stem_length'] <= 1:
+
+            self.drop_reason = 'fewer than 2 stem pairs'
 
             return
 
@@ -247,7 +295,8 @@ class Precursor_Features:
         # Assemble all the features in one dictionary
         nfeatures['length'] = len(self.seq)
         nfeatures['mfe'] = self.mfe
-        nfeatures['GC'] = self.calculate_GC()
+        # Named GC_content so the GC dinucleotide below cannot overwrite it.
+        nfeatures['GC_content'] = self.calculate_GC()
         nfeatures['loops'] = loops['total_loops']
         nfeatures['loop_GC'] = loops['loop_gc']
         nfeatures['loop_length'] = loops['loop_length']

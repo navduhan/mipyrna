@@ -5,15 +5,17 @@ Title: Class to remove non-coding RNA families from processed reads
 Author: Naveen Duhan
 
 '''
+import importlib.resources as ir
 import os
 import shutil
-from waiting import wait
-from mipyrna.aligner import Bowtie_Aligner
-from mipyrna import utility as mu
-from mipyrna.reads import Read_process
-import importlib.resources as ir
+import subprocess
 
-class FilterRNAfamlies():
+from mipyrna import utility as mu
+from mipyrna.aligner import Bowtie_Aligner
+from mipyrna.reads import Read_process
+
+
+class FilterRNAfamlies:
 
     def __init__(self, samples=None,  outdir=".", slurm=False):
         
@@ -23,7 +25,6 @@ class FilterRNAfamlies():
         
         self.outdir = mu.make_directory(os.path.join(outdir, "ncRNA_results"))
 
-        return
     
     def _extract_rfam_unmapped(self, samples, rfam_samples):
         
@@ -40,8 +41,11 @@ class FilterRNAfamlies():
             outfile=  f"{output}/{k}_filtered.fasta"
             
             execPATH = shutil.which('faSomeRecords')
-            
-            os.system(f"{execPATH} -exclude {sample[2]} {k}.txt {outfile}")
+
+            if execPATH is None:
+                raise FileNotFoundError("faSomeRecords (UCSC kent tools) was not found in PATH")
+
+            subprocess.run([execPATH, "-exclude", sample[2], f"{k}.txt", outfile], check=True)
             
             os.remove(f"{k}.txt")
             

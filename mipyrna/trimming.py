@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 """
 :Title: This modules contains read quality check functions for mipyrna
@@ -9,13 +8,14 @@
 :Author: Naveen Duhan
 """
 
+import importlib.resources as ir
 import os
 import shutil
-import sys
 import subprocess
-import importlib.resources as ir
-from mipyrna.logger import MiPyRNALogger
+import sys
+
 from mipyrna import utility as mu
+from mipyrna.logger import MiPyRNALogger
 
 # Intialize the logger
 
@@ -35,6 +35,9 @@ def flexbarRun(sampleDict,  configFile=None, slurm=False, mem=10, cpu=8, task=1,
         :param outDir: Output directory for results. Default is current working directory.
         :param dep: slurm job id on which this job depends.  Defaults to ''.    
     """
+
+    if sampleDict is None:
+        raise ValueError("sampleDict is required")
 
     if configFile != None:
 
@@ -98,6 +101,7 @@ def flexbarRun(sampleDict,  configFile=None, slurm=False, mem=10, cpu=8, task=1,
 
                 log.error(
                     "please provide a paired END sample file or input Path is wrong")
+                raise
 
             inputPair = mu.get_basename(input1)+" and " + mu.get_basename(input2)
 
@@ -110,6 +114,7 @@ def flexbarRun(sampleDict,  configFile=None, slurm=False, mem=10, cpu=8, task=1,
             except Exception:
 
                 log.error("please provide a valid input data path")
+                raise
 
             outflex[key] = [value[0], value[1],
                             os.path.join(output, value[0]+".fastq.gz")]
@@ -130,11 +135,11 @@ def flexbarRun(sampleDict,  configFile=None, slurm=False, mem=10, cpu=8, task=1,
             
             if paired:
 
-                flexbarCmd = f"{execPATH} -r {input1} -p {input2} -t {out} {args}"
+                flexbarCmd = f"{execPATH} -r {value[2]} -p {value[3]} -t {out} {args}"
 
             else:
 
-                flexbarCmd = f"{execPATH} -r {inputFile} -t {out} {args}"
+                flexbarCmd = f"{execPATH} -r {value[2]} -t {out} {args}"
             if dryrun:
                 pass
             else:
@@ -148,7 +153,7 @@ def flexbarRun(sampleDict,  configFile=None, slurm=False, mem=10, cpu=8, task=1,
                         job_id.append(job)
 
                         log.info(
-                            "Job submitted on slurm successfully for {} with {}".format(inputPair, job))
+                            f"Job submitted on slurm successfully for {inputPair} with {job}")
 
                     except Exception:
 
@@ -166,12 +171,11 @@ def flexbarRun(sampleDict,  configFile=None, slurm=False, mem=10, cpu=8, task=1,
                                 job_id.append(" ")
 
                                 log.info(
-                                    "Job successfully completed for {} with status {}".format(inputPair, job))
+                                    f"Job successfully completed for {inputPair} with status {job}")
 
                     except Exception:
 
-                        log.info("Job submition failed for {} ".format(
-                            mu.get_basename(out)))
+                        log.info(f"Job submition failed for {mu.get_basename(out)} ")
     if dryrun:
         return outflex
     
@@ -191,6 +195,9 @@ def trimmomaticRun(sampleDict=None, configFile=None, slurm=False, mem=10, cpu=8,
         :param outDir: Output directory for results. Default is current working directory.
         :param dep: slurm job id on which this job depends.  Defaults to ''.
     """
+
+    if sampleDict is None:
+        raise ValueError("sampleDict is required")
 
     if configFile != None:
 
@@ -283,6 +290,7 @@ def trimmomaticRun(sampleDict=None, configFile=None, slurm=False, mem=10, cpu=8,
 
                 log.error(
                     "Please provide a paired END sample file or input Path is wrong")
+                raise
 
             out1 = os.path.join(output, value[0]+"_1.fastq.gz")
             out2 = os.path.join(output, value[0]+"_2.fastq.gz")
@@ -296,6 +304,7 @@ def trimmomaticRun(sampleDict=None, configFile=None, slurm=False, mem=10, cpu=8,
             except Exception:
 
                 log.error("please provide a valid input data path")
+                raise
 
             outtrimmomatic[key] = [value[0], value[1],
                                    os.path.join(output, value[0]+".fastq.gz")]
@@ -317,11 +326,11 @@ def trimmomaticRun(sampleDict=None, configFile=None, slurm=False, mem=10, cpu=8,
 
             if paired:
 
-                trimmomaticCmd = f"{execPATH} PE {inputFile1} {inputFile2} {out1} {out2} {args}"
+                trimmomaticCmd = f"{execPATH} PE {value[2]} {value[3]} {outtrimmomatic[key][2]} {outtrimmomatic[key][3]} {args}"
 
             else:
 
-                trimmomaticCmd = f"{execPATH} SE {inputFile} {out} {args}"
+                trimmomaticCmd = f"{execPATH} SE {value[2]} {outtrimmomatic[key][2]} {args}"
 
             if dryrun:
                 pass
@@ -332,8 +341,7 @@ def trimmomaticRun(sampleDict=None, configFile=None, slurm=False, mem=10, cpu=8,
                         job = mu.clusterRun(job_name='trimmomatic', sout=os.path.join(output, "trimmomatic.out"), serror=os.path.join(
                             output, "trimmomatic.err"), command=trimmomaticCmd, mem=mem, cpu=cpu, tasks=task, dep=dep)
                         job_id.append(job)
-                        log.info("Job successfully submited for {} with {}".format(
-                            inputPair, job))
+                        log.info(f"Job successfully submited for {inputPair} with {job}")
 
                     except Exception:
 
@@ -348,7 +356,7 @@ def trimmomaticRun(sampleDict=None, configFile=None, slurm=False, mem=10, cpu=8,
                                     trimmomaticCmd, shell=True, stdout=fout, stderr=ferr)
                                 job_id.append(job)
                                 log.info(
-                                    "Job successfully completed for {} ".format(inputPair))
+                                    f"Job successfully completed for {inputPair} ")
 
                     except Exception:
 
@@ -358,9 +366,6 @@ def trimmomaticRun(sampleDict=None, configFile=None, slurm=False, mem=10, cpu=8,
                     shutil.move("TRAILING:3", output+"/TRAILING:3")
                 except Exception:
                     pass
-    if dryrun:
-        outtrimmomatic
-
     return outtrimmomatic, job_id
 
 
@@ -377,6 +382,9 @@ def trim_galoreRun(sampleDict=None, configFile=None, slurm=False, mem=10, cpu=8,
         :param outDir: Output directory for results. Default is current working directory.
         :param dep: slurm job id on which this job depends.  Defaults to ''.
     """
+
+    if sampleDict is None:
+        raise ValueError("sampleDict is required")
 
     if configFile != None:
 
@@ -441,6 +449,7 @@ def trim_galoreRun(sampleDict=None, configFile=None, slurm=False, mem=10, cpu=8,
 
                 log.error(
                     "please provide a paired END sample file or input Path is wrong")
+                raise
 
             out = value[0]
             inputPair = mu.get_basename(
@@ -453,6 +462,7 @@ def trim_galoreRun(sampleDict=None, configFile=None, slurm=False, mem=10, cpu=8,
             except Exception:
 
                 log.error("please provide a valid input data path")
+                raise
 
             outtrim_galore[key] = [value[0], value[1],
                                    os.path.join(output, value[0]+"_trimmed.fq.gz")]
@@ -477,11 +487,11 @@ def trim_galoreRun(sampleDict=None, configFile=None, slurm=False, mem=10, cpu=8,
         else:
             if paired:
 
-                trim_galoreCmd = f"{execPATH} {args} {input1} {input2} --paired --basename {out} -o {output} {gzip}"
+                trim_galoreCmd = f"{execPATH} {args} {value[2]} {value[3]} --paired --basename {out} -o {output} {gzip}"
 
             else:
 
-                trim_galoreCmd = f"{execPATH} {args} {inputFile} --basename {out} -o {output} {gzip}"
+                trim_galoreCmd = f"{execPATH} {args} {value[2]} --basename {out} -o {output} {gzip}"
 
                 # log.info(f"{trim_galoreCmd}")
                 
@@ -496,8 +506,7 @@ def trim_galoreRun(sampleDict=None, configFile=None, slurm=False, mem=10, cpu=8,
                         job = mu.clusterRun(job_name='trim_galore', sout=os.path.join(output, "trim_galore.out"), serror=os.path.join(
                             output, "trim_galore.err"), command=trim_galoreCmd, mem=mem, cpu=cpu, tasks=task, dep=dep)
                         job_id.append(job)
-                        log.info("Job successfully submited for {} with {}".format(
-                            inputPair, job))
+                        log.info(f"Job successfully submited for {inputPair} with {job}")
 
                     except Exception:
 
@@ -512,12 +521,9 @@ def trim_galoreRun(sampleDict=None, configFile=None, slurm=False, mem=10, cpu=8,
                                     trim_galoreCmd, shell=True, stdout=fout, stderr=ferr)
                                 job_id.append(" ")
                                 log.info(
-                                    "Job successfully completed for {} ".format(inputPair))
+                                    f"Job successfully completed for {inputPair} ")
 
                     except Exception:
 
                         log.error("Job sumission failed")
-    if dryrun:
-        outtrim_galore
-
     return outtrim_galore, job_id

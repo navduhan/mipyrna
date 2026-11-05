@@ -7,17 +7,16 @@ Author: Naveen Duhan
 '''
 
 import os
-from waiting import wait
-from Bio import SeqIO
+from functools import reduce
+
 import HTSeq
 import pandas as pd
-from functools import reduce
-from mipyrna.aligner import Bowtie_Aligner
+
 from mipyrna import utility as mu
-from mipyrna.reads import Read_process
+from mipyrna.aligner import Bowtie_Aligner
 
 
-class Quantifier():
+class Quantifier:
     
     def __init__(self, sRNA_file=None, samples=None, slurm=False, outdir="."):
         
@@ -26,7 +25,6 @@ class Quantifier():
         self.slurm = slurm
         self.outdir = outdir
         
-        return
     
     def _align_reads_against_miRNAs(self, cpu, mem, output):
         

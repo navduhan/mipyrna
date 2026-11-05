@@ -2,8 +2,9 @@
 
 """Simple reproducible report generation for miPyRNA runs."""
 
-import os
 import json
+import os
+
 import pandas as pd
 
 from mipyrna import utility as mu

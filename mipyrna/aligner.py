@@ -5,20 +5,23 @@ title: mipyrna aligner module
 Author: Naveen Duhan
 
 """
+import gzip
+import importlib.resources as ir
 import os
-import sys
 import shutil
 import subprocess
-import importlib.resources as ir
-from mipyrna.logger import MiPyRNALogger
-from mipyrna import utility as mu
+import sys
+
 from waiting import wait
+
+from mipyrna import utility as mu
+from mipyrna.logger import MiPyRNALogger
 
 # Intialize the logger
 
 log = MiPyRNALogger(mode='a', log='aligner')
 
-class Bowtie_Aligner():
+class Bowtie_Aligner:
     """Class for Bowtie aligner
 
     :param configFile: User defined Bowtie config file  
@@ -30,6 +33,9 @@ class Bowtie_Aligner():
     """
 
     def __init__(self, ref_genome=None, configFile=None, outdir=".", slurm=False, dryrun=False):
+        if ref_genome is None:
+            raise ValueError("ref_genome is required")
+
         self.genome = ref_genome
         self.outdir = outdir
         self.slurm = slurm
@@ -51,7 +57,6 @@ class Bowtie_Aligner():
            
             log.info("Using default config file bowtie.ini")
 
-        return
 
     def build_index(self, mem=20, tasks = 1, cpu = 8, dep=""):
 
@@ -95,9 +100,15 @@ class Bowtie_Aligner():
 
             if self.genome.endswith(".gz"):
 
-                os.system(' '.join(["gunzip", self.genome]))
+                target = os.path.join(output, os.path.basename(self.genome)[:-3])
 
-            os.system(' '.join(["cp", self.genome, output]))
+                with gzip.GzipFile(self.genome, "rb") as fin, open(target, "wb") as fout:
+
+                    shutil.copyfileobj(fin, fout)
+
+            else:
+
+                shutil.copy(self.genome, output)
 
             log.info(f"{mu.get_basename(self.genome)} copied successfully in {directory}")
         
@@ -115,7 +126,7 @@ class Bowtie_Aligner():
 
             basename = os.path.join(output,mu.get_basename(self.genome))
 
-        GenomeFasta = os.path.join(output, mu.get_basename(self.genome))
+        GenomeFasta = os.path.join(output, mu.get_basename(self.genome).removesuffix(".gz"))
 
         arg = ' '.join(config[2:])
 
@@ -140,7 +151,7 @@ class Bowtie_Aligner():
 
                     job_id = mu.clusterRun(job_name='bowtie-build',sout=os.path.join(output, "bowtie_build.out") , serror= os.path.join(output, "bowtie_build.err"), command= bowtie_command, mem=mem, cpu=cpu, tasks=tasks, dep=dep)
 
-                    log.info("Job successfully submited for {} with {} for indexing".format(GenomeFasta, job_id))
+                    log.info(f"Job successfully submited for {GenomeFasta} with {job_id} for indexing")
                     
                     wait(lambda: mu.check_status(job_id), waiting_for="alignment to finish")
 
@@ -157,7 +168,7 @@ class Bowtie_Aligner():
                             with open(os.path.join(output, "bowtie_build.err"), 'w+') as ferr:
                                 job_id = subprocess.call(bowtie_command, shell=True,stdout=fout,stderr=ferr)
 
-                                log.info("Job successfully submited for {} for indexing".format(GenomeFasta))
+                                log.info(f"Job successfully submited for {GenomeFasta} for indexing")
 
                 except Exception:
                     
@@ -284,9 +295,13 @@ class Bowtie_Aligner():
 
                             bowtie_command = f"{execPATH} -q -x {genomeIndex} {arg} -1 {sample[2]} -2 {sample[3]} > {outBAM}"
 
-                        if fileType == 'fasta':
+                        elif fileType == 'fasta':
 
                             bowtie_command = f"{execPATH} -f -x {genomeIndex} {arg} -1 {sample[2]} -2 {sample[3]} > {outBAM}"
+
+                        else:
+
+                            raise ValueError(f"fileType must be 'fastq' or 'fasta', got {fileType!r}")
 
                     else:
 
@@ -294,11 +309,13 @@ class Bowtie_Aligner():
 
                             bowtie_command = f"{execPATH} -q -x {genomeIndex} {arg} {sample[2]} > {outBAM}"
 
-                        if fileType == 'fasta':
+                        elif fileType == 'fasta':
 
                             bowtie_command = f"{execPATH} -f -x {genomeIndex} {arg} {sample[2]} > {outBAM}"
 
-                            # print(bowtie_command)
+                        else:
+
+                            raise ValueError(f"fileType must be 'fastq' or 'fasta', got {fileType!r}")
 
                     if self.dryrun:
                             pass
@@ -308,7 +325,7 @@ class Bowtie_Aligner():
                             try:
                                 job = mu.clusterRun(job_name='bowtie_align', sout=os.path.join(output, "bowtie.out") , serror=os.path.join(output, "bowtie.err") ,command= bowtie_command, mem=mem, cpu=cpu, tasks=tasks, dep=dep)
                                 job_id.append(job)
-                                log.info("Job successfully submited for {} with {} for alignment".format(outPrefix, job))
+                                log.info(f"Job successfully submited for {outPrefix} with {job} for alignment")
 
                             except Exception:
 
@@ -321,7 +338,7 @@ class Bowtie_Aligner():
                                     with open(os.path.join(output, "bowtie.err"), 'w+') as ferr:
                                         job = subprocess.call(bowtie_command, shell=True,stdout=fout,stderr=ferr)
                                         job_id.append(job)
-                                        log.info("Job successfully completed for {} for alignment".format(outPrefix))
+                                        log.info(f"Job successfully completed for {outPrefix} for alignment")
 
                             except Exception:
                                     
@@ -340,6 +357,9 @@ class Bowtie_Aligner():
             return outbowtie
         
         else:
+            if samples is None:
+                raise ValueError("samples or samplesDict is required")
+
             outBAM = os.path.join(output,"all_reads_bowtie.sam")
 
             execPATH = shutil.which('bowtie')
@@ -355,15 +375,19 @@ class Bowtie_Aligner():
 
                     bowtie_command = f"{execPATH} -q -x {genomeIndex} {arg} {samples[2]} > {outBAM}"
 
-                if fileType == 'fasta':
+                elif fileType == 'fasta':
 
                     bowtie_command = f"{execPATH} -f -x {genomeIndex} -p 40 -n 0 -e 80 -l 18 -a -m 5 --best --strata {samples[2]} > {outBAM}"
+
+                else:
+
+                    raise ValueError(f"fileType must be 'fastq' or 'fasta', got {fileType!r}")
 
                 if self.slurm:
                     try:
                         job = mu.clusterRun(job_name='bowtie_align', sout=os.path.join(output, "bowtie.out") , serror=os.path.join(output, "bowtie.err") ,command= bowtie_command, mem=mem, cpu=cpu, tasks=tasks, dep=dep)
                         job_id.append(job)
-                        log.info("Job successfully submited for {} with {} for alignment".format(outPrefix, job))
+                        log.info(f"Job successfully submited for {outBAM} with {job} for alignment")
 
                     except Exception:
 
@@ -376,7 +400,7 @@ class Bowtie_Aligner():
                             with open(os.path.join(output, "bowtie.err"), 'w+') as ferr:
                                 job = subprocess.call(bowtie_command, shell=True,stdout=fout,stderr=ferr)
                                 job_id.append(job)
-                                log.info("Job successfully completed for {} for alignment".format(outPrefix))
+                                log.info(f"Job successfully completed for {outBAM} for alignment")
 
                     except Exception:
                             

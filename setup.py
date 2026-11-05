@@ -1,7 +1,8 @@
-import setuptools 
-from pathlib import Path
-import tarfile
 import os
+import tarfile
+from pathlib import Path
+
+import setuptools
 
 
 def read_requirements(path="requirements.txt"):
@@ -35,7 +36,7 @@ setuptools.setup(
     long_description_content_type='text/markdown',
     entry_points={
             'console_scripts': [
-                    'mipyrna = mipyrna.__main__:main',
+                    'mipyrna = mipyrna.cli:main',
             ]
     },
     install_requires=read_requirements(),
@@ -54,11 +55,11 @@ setuptools.setup(
         # Specify the Python versions you support here. In particular, ensure
         # that you indicate whether you support Python 2, Python 3 or both.
         
-        'Programming Language :: Python :: 3.8',
-        'Programming Language :: Python :: 3.9'
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11'
     ],
-    package_data={'': ['param/*.ini', 'data/*']},
-    # python_requires='==3.8'
+    package_data={'': ['param/*.ini', 'data/*', 'data/models/SHA256SUMS', 'data/models/*/*.keras']},
+    python_requires='>=3.10',
 )
 
 

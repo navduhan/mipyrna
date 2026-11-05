@@ -6,13 +6,13 @@ channels:
   - r
 
 dependencies:
-  - python=3.10
+  - python=3.11
   - pip
   - setuptools
   - wheel
 
   # Core Python scientific stack
-  - numpy
+  - numpy=2.4.6
   - pandas
   - scipy
   - matplotlib
@@ -33,11 +33,11 @@ dependencies:
   - pysam
   - htseq
   - bx-python
-  - forgi
-  - viennarna
+  - forgi=2.2.3
+  - viennarna=2.7.2
   - adjusttext
-  - keras
-  - tensorflow
+  - keras=3.11.3
+  - tensorflow=2.20.0
 
   # R / DE analysis
   - r-base

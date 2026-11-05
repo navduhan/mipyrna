@@ -8,14 +8,14 @@
 :Author: Naveen Duhan
 """
 
-import os 
-import sys
+import importlib.resources as ir
+import os
 import shutil
 import subprocess
-import importlib.resources as ir
+import sys
 
-from mipyrna.logger import MiPyRNALogger
 from mipyrna import utility as mu
+from mipyrna.logger import MiPyRNALogger
 
 # Intialize the logger
 
@@ -45,6 +45,9 @@ def fastqcRun(sampleDict=None, configFile=None,slurm=False, mem=10, cpu=8, task=
     
     :param dep: Slurm job dependency.
     """
+
+    if sampleDict is None:
+        raise ValueError("sampleDict is required")
 
     if configFile != None:
 
@@ -98,6 +101,7 @@ def fastqcRun(sampleDict=None, configFile=None,slurm=False, mem=10, cpu=8, task=
 
                 log.error(
                     "log please provide a paired END samloge file or input Path is wrong")
+                raise
 
             inputPair = mu.get_basename(input1)+" and " + mu.get_basename(input2)
 
@@ -125,6 +129,7 @@ def fastqcRun(sampleDict=None, configFile=None,slurm=False, mem=10, cpu=8, task=
             except Exception:
 
                 log.error("logease provide a valid input data path")
+                raise
             
             inputPair = mu.get_basename(value[2])
 
@@ -152,11 +157,11 @@ def fastqcRun(sampleDict=None, configFile=None,slurm=False, mem=10, cpu=8, task=
 
             if pairedEND:
 
-                fastqcCmd = f"{execPATH} -o {output} {args} {input1} {input2}"
+                fastqcCmd = f"{execPATH} -o {output} {args} {value[2]} {value[3]}"
 
             else:
 
-                fastqcCmd = f"{execPATH} -o {output} {args} {inputFile}"
+                fastqcCmd = f"{execPATH} -o {output} {args} {value[2]}"
             
             if dryrun:
                 pass
@@ -170,7 +175,7 @@ def fastqcRun(sampleDict=None, configFile=None,slurm=False, mem=10, cpu=8, task=
                         job_id.append(job)
 
                         log.info(
-                            "Job submitted on slurm successfully for {} with {}".format(inputPair, job))
+                            f"Job submitted on slurm successfully for {inputPair} with {job}")
 
                     except Exception:
 
@@ -186,11 +191,11 @@ def fastqcRun(sampleDict=None, configFile=None,slurm=False, mem=10, cpu=8, task=
 
                                 job_id.append(" ")    
 
-                                log.info("Job successfully completed for {} with status {}".format(inputPair, job))
+                                log.info(f"Job successfully completed for {inputPair} with status {job}")
 
                     except Exception:
 
-                        log.info("Job submition failed for {} error present in fastqc.err  ".format(mu.get_basename(out)))
+                        log.info(f"Job submition failed for {mu.get_basename(out)} error present in fastqc.err  ")
                 
     if dryrun:
         

@@ -1,6 +1,4 @@
 # Use the official Miniconda base image
-FROM ubuntu:24.04
-FROM python:3.10
 FROM continuumio/miniconda3:latest
 
 # Author: Naveen Duhan
@@ -17,7 +15,7 @@ RUN git clone https://github.com/navduhan/mipyrna.git /mipyrna
 WORKDIR /mipyrna
 
 # Install dependencies from the YAML file
-RUN conda env create -f mipyrna_environment.yml
+RUN conda env create -f mipyrna_environment.yaml
 
 # Activate the conda environment
 # Note: The activation command is generally not needed in RUN instructions, so we directly use conda.

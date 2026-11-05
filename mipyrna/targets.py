@@ -4,14 +4,15 @@ title: miRNA target prediction utilities
 
 Author: Naveen Duhan
 """
+import importlib.resources as ir
 import os
 import shutil
 import subprocess
-import importlib.resources as ir
+
 import pandas as pd
 
-from mipyrna.logger import MiPyRNALogger
 from mipyrna import utility as mu
+from mipyrna.logger import MiPyRNALogger
 
 log = MiPyRNALogger(mode='a', log='miRNA_target')
 
@@ -115,5 +116,5 @@ def run_targets(miRNA_file=None, configFile=None, mRNA_file=None, slurm=False, o
         "raw_output": raw_out,
         "parsed_output": parsed_out,
         "summary_output": summary_out,
-        "count_predictions": int(len(parsed))
+        "count_predictions": len(parsed)
     }

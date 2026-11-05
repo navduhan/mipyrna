@@ -5,9 +5,8 @@ Author: Naveen Duhan
 Lab: KAABiL(Kaundal Artificial Intelligence & Advanced Bioinformatics Lab)
 Version: 0.2
 """
-import mipyrna
-from mipyrna import __main__
+from mipyrna import cli
 
 if __name__ == '__main__':
 
-    __main__.main()
+    cli.main()

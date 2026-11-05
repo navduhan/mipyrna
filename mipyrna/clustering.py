@@ -1,13 +1,13 @@
 
+import collections
+
 import numpy as np
 import pandas as pd
-import collections
-import pyfaidx as pf
-from tqdm import tqdm
 from bx.intervals.cluster import ClusterTree
+from tqdm import tqdm
 
 
-class Cluster_reads():
+class Cluster_reads:
 
     def __init__(self,  cluster_distance=10, min_size=3,min_length=20, max_length=24, key='align_id'):
 
@@ -31,7 +31,7 @@ class Cluster_reads():
             for i, row in input_file.iterrows():
                 chrom = row['name']
                 cluster_trees[chrom].insert(row.start, row.end, row.name)
-                clustertrees = dict(cluster_trees)
+            clustertrees = dict(cluster_trees)
             cgroups = []
             icount = 1
             for chrom, cltree in clustertrees.items():

@@ -3,21 +3,23 @@
 """End-to-end workflow orchestration for miPyRNA."""
 
 import os
+
 import pandas as pd
 
 from mipyrna import utility as mu
-from mipyrna.logger import MiPyRNALogger
-from mipyrna.quality import fastqcRun
-from mipyrna.trimming import trimmomaticRun
-from mipyrna.reads import Read_process
 from mipyrna.aligner import Bowtie_Aligner
-from mipyrna.clustering import Cluster_reads
-from mipyrna.novel import Novel_miRNA
-from mipyrna.quantifier import Quantifier
-from mipyrna.differential import runDESeq2
-from mipyrna.targets import run_targets
 from mipyrna.annotation import run_enrichment
+from mipyrna.check import provenance
+from mipyrna.clustering import Cluster_reads
+from mipyrna.differential import runDESeq2
+from mipyrna.logger import MiPyRNALogger
+from mipyrna.novel import Novel_miRNA
+from mipyrna.quality import fastqcRun
+from mipyrna.quantifier import Quantifier
+from mipyrna.reads import Read_process
 from mipyrna.report import generate_report
+from mipyrna.targets import run_targets
+from mipyrna.trimming import trimmomaticRun
 
 log = MiPyRNALogger(mode='a', log='workflow')
 
@@ -58,7 +60,7 @@ def run_workflow(
     samples = parsed["samples"]
     combinations = parsed["combinations"]
     targets = parsed["targets"]
-    metadata = {"outdir": output}
+    metadata = {"outdir": output, **provenance(species_type)}
 
     if run_qc:
         try:

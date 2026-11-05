@@ -5,17 +5,22 @@ title: mipyrna miRbase utility
 Author: Naveen Duhan
 """
 
-import wget
-import os 
-import subprocess
-import pandas as pd
-from Bio import SeqIO
 import importlib.resources as ir
+import os
 import ssl
+import subprocess
+
+import pandas as pd
+import wget
+from Bio import SeqIO
+
 ssl._create_default_https_context = ssl._create_unverified_context
 
 class MirBase:
     def __init__(self, species=None, speciesClass= None, outdir='.'):
+
+        if speciesClass is None:
+            raise ValueError("speciesClass is required")
 
         self.species = species
         self.species_class = speciesClass
