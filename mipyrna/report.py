@@ -8,18 +8,24 @@ import os
 import pandas as pd
 
 from mipyrna import utility as mu
+from mipyrna.logger import MiPyRNALogger
+
+log = MiPyRNALogger(mode='a', log='report')
 
 
 def _safe_count(path, sep="\t"):
+    """Return the number of rows in a table, or 0 if it is missing or unreadable."""
     if path is None or not os.path.exists(path):
         return 0
     try:
         return len(pd.read_csv(path, sep=sep))
-    except Exception:
+    except Exception as exc:
+        log.warning(f"Could not read {path}: {exc}")
         return 0
 
 
 def generate_report(outdir=".", metadata=None):
+    """Write the Markdown analysis report and workflow metadata JSON."""
     report_dir = mu.make_directory(os.path.join(outdir, "report"))
     report_path = os.path.join(report_dir, "analysis_report.md")
     meta_path = os.path.join(report_dir, "workflow_metadata.json")

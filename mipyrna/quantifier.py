@@ -1,10 +1,9 @@
-#!/usr/bin/python
+"""Quantification of miRNAs for differential expression.
 
-'''
-Title: Quantifier module for differential expression of miRNAs
+Counts aligned reads per miRNA and merges them into a count matrix.
 
-Author: Naveen Duhan
-'''
+:Author: Naveen Duhan
+"""
 
 import os
 from functools import reduce
@@ -17,8 +16,10 @@ from mipyrna.aligner import Bowtie_Aligner
 
 
 class Quantifier:
+    """Count reads per miRNA across samples."""
     
     def __init__(self, sRNA_file=None, samples=None, slurm=False, outdir="."):
+        """Set the miRNA FASTA, samples and output directory."""
         
         self.sRNA = sRNA_file
         self.samples = samples
@@ -27,6 +28,7 @@ class Quantifier:
         
     
     def _align_reads_against_miRNAs(self, cpu, mem, output):
+        """Align the sample reads to the miRNA sequences."""
         
         aln = Bowtie_Aligner(ref_genome=self.sRNA, outdir=output, slurm=self.slurm)
         aln.build_index()
@@ -36,6 +38,7 @@ class Quantifier:
         return results
     
     def _get_counts(self, aligned_files):
+        """Sum aligned read counts per miRNA for each sample."""
         all_counts = {}
         for k, sample in aligned_files.items():
             
@@ -62,6 +65,7 @@ class Quantifier:
     
 
     def quantify_expression(self, cpu=8, mem=20):
+        """Align, count and write the merged raw count matrix to Raw_read_counts.xlsx."""
         
         aligdir = mu.make_directory(os.path.join(self.outdir, "quant_align"))
         

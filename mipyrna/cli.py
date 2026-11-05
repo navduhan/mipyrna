@@ -6,6 +6,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 
 def _version():
+    """Return the installed miPyRNA version, or "unknown"."""
     try:
         return version("miPyRNA")
     except PackageNotFoundError:
@@ -13,6 +14,7 @@ def _version():
 
 
 def build_parser():
+    """Build the argument parser with its sub-commands."""
     parser = argparse.ArgumentParser(
         prog="mipyrna",
         description="miPyRNA: small RNA-seq analysis toolkit",
@@ -71,6 +73,7 @@ def build_parser():
 
 
 def main(argv=None):
+    """Run the command-line interface and return the exit code."""
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.check:

@@ -1,8 +1,9 @@
-#!/usr/bin/python3
+"""miRBase download and sequence utilities.
 
-"""
-title: mipyrna miRbase utility
-Author: Naveen Duhan
+Defines MirBase, which fetches and prepares miRBase hairpin and mature
+sequences for a species or clade.
+
+:Author: Naveen Duhan
 """
 
 import importlib.resources as ir
@@ -17,7 +18,9 @@ from Bio import SeqIO
 ssl._create_default_https_context = ssl._create_unverified_context
 
 class MirBase:
+    """Download and subset miRBase sequences for a species or clade."""
     def __init__(self, species=None, speciesClass= None, outdir='.'):
+        """Set the species and class (plants, animals, virus or fungi); validate the species code."""
 
         if speciesClass is None:
             raise ValueError("speciesClass is required")
@@ -31,6 +34,7 @@ class MirBase:
 
 
     def get_organism(self):
+        """Download the miRBase organisms file and return its path."""
 
         organism_file = os.path.join(self.outdir, 'organisms.txt.gz')
 
@@ -46,6 +50,7 @@ class MirBase:
         return out
 
     def check_organim(self):
+        """Return True if the species code is a known miRBase species."""
         
         file = str(ir.files("mipyrna").joinpath("data/organisms.txt"))
         df = pd.read_csv(file, sep="\t")
@@ -56,6 +61,7 @@ class MirBase:
 
 
     def get_mature(self):
+        """Download all mature miRBase sequences and return the path."""
 
         out = os.path.join(self.outdir, 'mature.fa')
 
@@ -70,6 +76,7 @@ class MirBase:
         return out
 
     def get_hairpin(self):
+        """Download all miRBase hairpin sequences and return the path."""
 
         out = os.path.join(self.outdir, 'hairpin.fa')
 
@@ -83,6 +90,7 @@ class MirBase:
         return out
 
     def get_species(self):
+        """Write the mature and hairpin sequences of the species and return their paths."""
 
         species_mature = os.path.join(self.outdir, f'{self.species}_mature.fa')
         species_precursor = os.path.join(self.outdir, f'{self.species}_hairpin.fa')
@@ -116,6 +124,7 @@ class MirBase:
         return {'mature': species_mature, 'hairpin': species_precursor}
 
     def get_other_species(self):
+        """Write the sequences of the other species in the same class, excluding this species."""
 
         org_file = self.get_organism()
 
@@ -167,6 +176,7 @@ class MirBase:
         return {'other_mature': species_mature, 'other_hairpin': species_precursor}
     
     def get_all_species(self):
+        """Write the mature and hairpin sequences of every species in the class."""
 
         org_file = self.get_organism()
 

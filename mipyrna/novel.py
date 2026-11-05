@@ -1,3 +1,12 @@
+"""Prediction of novel miRNAs.
+
+Defines Novel_miRNA, which extracts candidate precursors around read
+clusters, folds them with ViennaRNA, scores them with the bundled model and
+filters candidates by mature and star duplex structure.
+
+:Author: Naveen Duhan
+"""
+
 import contextlib
 import os
 import re
@@ -20,6 +29,7 @@ log = MiPyRNALogger(mode='a', log='novel')
 
 
 class Novel_miRNA:
+    """Predict novel miRNAs from clustered small RNA reads."""
 
     def __init__(
         self,
@@ -40,6 +50,7 @@ class Novel_miRNA:
         require_star=False,
         random_seed=42
     ):
+        """Set the genome, samples, thresholds and random seed."""
 
         self.genome = genome
         self.readsCutoff = read_cutoff
@@ -60,6 +71,7 @@ class Novel_miRNA:
 
 
     def get_precursor_structure(self, seq):
+        """Fold a sequence and return its structure and minimum free energy."""
 
         try:
             x = RNA.fold(seq)
@@ -69,6 +81,7 @@ class Novel_miRNA:
         return x
 
     def get_bulge(self, seq):
+            """Fold a sequence and return its forgi bulge graph."""
         
             seq = seq.replace('T','U')
             pstructure, _pmfe = RNA.fold(seq)
@@ -78,6 +91,7 @@ class Novel_miRNA:
             return bulge_graph
 
     def close_match(self,  preseq, seq):
+        """Find where seq matches preseq with one mismatch, or -1."""
 
         string_to_match = re.compile('|'.join(seq[:i]+'.'+seq[i+1:] for i in range(len(seq))))
         m = string_to_match.findall(preseq)
@@ -86,6 +100,7 @@ class Novel_miRNA:
         return idx
 
     def find_subseq(self, seq, string):
+        """Locate a mature sequence in a precursor, falling back to a one-mismatch match."""
 
         for i in range(16,4,-4):
             c = seq.find(string[:i])
@@ -93,6 +108,7 @@ class Novel_miRNA:
         return self.close_match(seq, string)
 
     def check_mature(self, precursor, mature):
+            """Check where the mature sequence sits in the precursor structure; returns "ok" or the reason it fails."""
 
             bg = self.get_bulge(precursor)
             if bg is None:
@@ -170,12 +186,14 @@ class Novel_miRNA:
         return round(score, 4)
 
     def predict_precursor(self, df):
+        """Score precursor features with the bundled model; returns P(miRNA) and P(non-miRNA)."""
 
         prob = ms.predict(df['features'].tolist(), self.species_type)
 
         return pd.DataFrame({'miRNA': prob, 'Non-miRNA': 1.0 - prob})
 
     def get_putative_precursor(self, filtered_cluster=None,  other=None,  seqlength=20, loop=20, precursor_step= 10 ):
+        """Extract and score candidate precursors around each read cluster."""
 
         if filtered_cluster is None:
             raise ValueError("filtered_cluster is required")
@@ -298,6 +316,7 @@ class Novel_miRNA:
         return putative_precursor
     
     def filter_miRNA(self, df):
+        """Keep the best-scoring precursor per mature sequence and assign novel IDs."""
         # Keep the single best-scoring precursor per mature sequence.
         idx = df.groupby('mature')['score'].idxmax().tolist()
         final_miRNAs = df.loc[idx].reset_index(drop=True)
@@ -309,6 +328,7 @@ class Novel_miRNA:
         return final_miRNAs
 
     def apply_strict_filters(self, df):
+        """Apply the structure, score, read count and randfold filters."""
         mask = (
             (df['mature_check'] == 'ok')
             & (df['score'] >= self.score)
@@ -320,6 +340,7 @@ class Novel_miRNA:
         return df[mask].copy()
     
     def _write_fasta(self, df, output, type='known', seq='mature'):
+        """Write mature or hairpin sequences of known or novel miRNAs to a FASTA file."""
         mature_seq = []
         with open(output,'w') as fp:
             for _i, r in df.iterrows():
@@ -344,6 +365,7 @@ class Novel_miRNA:
         return output
     
     def predict_known_miRNAs(self, novel_df):
+        """Split predictions into known and novel miRNAs by BLAST against related species."""
 
         blast = mu.make_directory(os.path.join(self.outdir, "blast_results"))
         novel_mature = os.path.join(self.outdir, "all_sample_pooled_mature.fa")
@@ -394,15 +416,15 @@ class Novel_miRNA:
             known_miRNAs['raw_ID'] = known_miRNAs['Novel_ID']
             known_miRNAs['Novel_ID'] = [f"{self.species}_miPyRNA_{known_miRNAs.iloc[i]['chrom']}_miR_{i + 1}"
                                         for i in range(len(known_miRNAs))]
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning(f"Could not rename known miRNA IDs: {exc}")
         
         try:
             novel_miRNAs['raw_ID'] = novel_miRNAs['Novel_ID']
             novel_miRNAs['Novel_ID'] = [f"{self.species}_miPyRNA_{novel_miRNAs.iloc[i]['chrom']}_miR_{i + 1}"
                                         for i in range(len(novel_miRNAs))]
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning(f"Could not rename novel miRNA IDs: {exc}")
 
         known_miRNAs.to_excel(f"{self.outdir}/known_miRNAs.xlsx", index=False)
         novel_miRNAs.to_excel(f"{self.outdir}/novel_miRNAs.xlsx", index=False)
@@ -414,6 +436,7 @@ class Novel_miRNA:
     
 
     def get_novel_miRNA(self):
+        """Run novel miRNA prediction for all samples and return the final table."""
        
         if self.samples is None:
             raise ValueError("samples is required")

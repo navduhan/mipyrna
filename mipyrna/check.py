@@ -1,6 +1,7 @@
-#!/usr/bin/env python3
+"""Environment checks and run provenance for miPyRNA.
 
-"""Environment checks and run provenance for miPyRNA."""
+:Author: Naveen Duhan
+"""
 
 import shutil
 import sys
@@ -15,6 +16,7 @@ PINNED = {'tensorflow': '2.20.0', 'keras': '3.11.3', 'numpy': '2.4.6',
 
 
 def package_versions():
+    """Return the installed version of each pinned library, or None if missing."""
     versions: dict[str, str | None] = {'python': sys.version.split()[0]}
     for name in PINNED:
         try:
@@ -25,6 +27,7 @@ def package_versions():
 
 
 def provenance(species_type):
+    """Return library versions and the model checksum for the run report."""
     from mipyrna import model_store as ms
 
     return {'versions': package_versions(), 'model': ms.model_info(species_type)}

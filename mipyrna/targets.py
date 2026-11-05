@@ -1,9 +1,10 @@
-#!/usr/bin/python
-"""
-title: miRNA target prediction utilities
+"""miRNA target prediction.
 
-Author: Naveen Duhan
+Runs miranda and parses its output into a target table.
+
+:Author: Naveen Duhan
 """
+
 import contextlib
 import importlib.resources as ir
 import os
@@ -19,6 +20,7 @@ log = MiPyRNALogger(mode='a', log='miRNA_target')
 
 
 def _parse_miranda_output(raw_output, parsed_output):
+    """Parse raw miranda output into a tab-separated target table."""
     records = []
     current = {"miRNA": None, "target_id": None, "score": None, "energy": None}
     with open(raw_output) as handle:
@@ -64,6 +66,7 @@ def _parse_miranda_output(raw_output, parsed_output):
 
 
 def run_targets(miRNA_file=None, configFile=None, mRNA_file=None, slurm=False, outdir=".", dryrun=False):
+    """Predict miRNA targets with miranda and return the output paths."""
     if miRNA_file is None or mRNA_file is None:
         raise ValueError("Both miRNA_file and mRNA_file are required")
 

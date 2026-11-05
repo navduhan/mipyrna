@@ -1,12 +1,12 @@
-#!/usr/bin/python
+"""Structure and sequence features of miRNA precursors.
 
-"""
-Title: Feature generation class for Novel miRNA precursor prediction
-Author: Naveen Duhan
-Date: August 23, 2022
+Defines Precursor_Features, which folds a precursor with ViennaRNA and builds
+the feature dictionary scored by the bundled model. Must stay identical to the
+training code so features match what the models were trained on.
+
+:Author: Naveen Duhan
 """
 
-# import statements
 from __future__ import annotations
 
 import forgi.graph.bulge_graph as fgb
@@ -59,6 +59,7 @@ class Precursor_Features:
 
 
     def _require_bulge_graph(self) -> fgb.BulgeGraph:
+        """Return the bulge graph, raising if structure prediction failed."""
         if self.buldge_graph is None:
             raise RuntimeError("structure prediction did not produce a bulge graph")
 
@@ -66,6 +67,7 @@ class Precursor_Features:
 
 
     def get_buldge_graph(self):
+        """Fold the sequence and return its structure, MFE and bulge graph."""
 
         pstructure, pmfe = RNA.fold(self.seq)
 
@@ -74,6 +76,7 @@ class Precursor_Features:
         return {'structure': pstructure, 'mfe': pmfe, 'bulge_graph': bulge_graph}
 
     def find_biggest_stem(self):
+        """Return the length of the longest stem."""
 
         graph = self._require_bulge_graph()
 
@@ -88,6 +91,7 @@ class Precursor_Features:
         return big_stem[0]
 
     def find_stem_pairs(self):
+        """Return the base pairs of all stems and their count."""
 
         # forgi >= 2.0 returns bg.seq as a 1-based Sequence object, and
         # stem_bp_iterator() yields 1-based positions. Convert once to a plain
@@ -107,6 +111,7 @@ class Precursor_Features:
         return {'stem_pairs': stem_pairs, 'stem_length': len(stem_pairs)}
 
     def find_matched_stem(self):
+        """Flag each stem pair as Watson-Crick matched or not, and count the mismatches."""
 
         base_pairs = {'A': 'U', 'T': 'A', 'U': 'A', 'G': 'C', 'C': 'G', 'R': 'R','K': 'K','Y': 'Y', 'S': 'S', 'M': 'M', 'W': 'W', 'H': 'H', 'B': 'B', 'V': 'V', 'D': 'D', 'N': 'N'}
         matched_stem = []
@@ -124,6 +129,7 @@ class Precursor_Features:
         return {'matched_stem': matched_stem, 'mismatched_stem': matched_stem.count(False)}
 
     def find_loops(self):
+        """Return the hairpin loop count, length and GC percentage; zero-filled if unavailable."""
 
         try:
             graph = self._require_bulge_graph()
@@ -152,6 +158,7 @@ class Precursor_Features:
         return {'loop_gc': loop_gc, 'total_loops': loops, 'loop_length': loop_length}
 
     def find_bulges(self):
+        """Return interior loop (bulge) counts, the longest, and symmetric and asymmetric counts."""
 
         graph = self._require_bulge_graph()
 
@@ -178,6 +185,7 @@ class Precursor_Features:
         return {'bulges': bulges, 'total': total_bulges, 'longest_bulge': longest_bulge, 'symmetric_bulge': symmetric_bulge, 'asymmetric_bulge': asymmetric_bulge}
 
     def calculate_GC(self):
+        """Return the GC percentage of the sequence."""
 
         GC_count = sum(1 for x in self.seq if x in ['G', 'C'])
 
@@ -188,6 +196,7 @@ class Precursor_Features:
         return float(GC_count) / len(self.seq) * 100
 
     def generate_nucleotide_composition(self):
+        """Return the percentage of each nucleotide."""
 
         nuc = ['A', 'C', 'U', 'G']
 
@@ -200,6 +209,7 @@ class Precursor_Features:
         return nuc_comp
 
     def generate_dinucleotide_composition(self):
+        """Return the percentage of each dinucleotide."""
 
         N = len(self.seq)
 
@@ -220,6 +230,7 @@ class Precursor_Features:
         return dpc
 
     def generate_trinucleotide_composition(self):
+        """Return the percentage of each trinucleotide."""
 
         N = len(self.seq)
 
@@ -242,6 +253,7 @@ class Precursor_Features:
         return tpc
 
     def generate_triplets(self):
+        """Count middle-base and dot-bracket triplets (4 bases x 8 structure patterns)."""
 
         structure_string = list(TRIPLET_STRUCTURES)
 
@@ -273,6 +285,7 @@ class Precursor_Features:
         return structure_triplets
 
     def generate_features(self):
+        """Return the full feature dictionary, or None if the precursor has no usable structure."""
 
         nfeatures = {}
 

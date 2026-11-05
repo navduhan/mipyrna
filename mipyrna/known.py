@@ -1,10 +1,11 @@
-#!/usr/bin/python
-'''
-Title: Class to remove non-coding RNA families from processed reads
+"""Identification of known miRNAs.
 
-Author: Naveen Duhan
+Defines Known_miRNA, which aligns processed reads to miRBase and reports
+reads matching known mature miRNAs and their precursors.
 
-'''
+:Author: Naveen Duhan
+"""
+
 import os
 import shutil
 import subprocess
@@ -16,8 +17,10 @@ from mipyrna.reads import Read_process
 
 
 class Known_miRNA:
+    """Find known miRNAs by aligning reads to miRBase."""
 
     def __init__(self, samples=None, species=None,species_type='plants', outdir=".", slurm = False):
+        """Set the samples, species and output directory."""
         
         self.samples = samples
         self.species = species
@@ -27,6 +30,7 @@ class Known_miRNA:
 
     
     def _extract_known_unmapped(self, samples, rfam_samples):
+        """Write the reads that did not match a known miRNA to a FASTA file per sample."""
         
         outfiltered = {}
         
@@ -54,6 +58,7 @@ class Known_miRNA:
         return outfiltered
     
     def align_known(self, cpu=8,mem=20):
+        """Align reads to the species mature miRNAs and return the remaining reads per sample."""
 
         
         mir = MirBase(species=self.species, speciesClass=self.species_type, outdir= self.outdir)

@@ -1,7 +1,8 @@
-#!/usr/bin/env python3
+"""Functional annotation and enrichment helpers.
 
-"""
-Functional annotation and enrichment helper utilities.
+Runs enrichment of target gene lists against an online annotation service.
+
+:Author: Naveen Duhan
 """
 
 import os
@@ -16,6 +17,15 @@ log = MiPyRNALogger(mode='a', log='annotation')
 
 
 def run_enrichment(targets_file=None, organism=None, outdir=".", sources=None, user_threshold=0.05):
+    """Run g:Profiler enrichment on the target genes and write enrichment_results.tsv.
+
+    :param targets_file: Tab-separated targets file with a target_id column.
+    :param organism: g:Profiler organism code, for example athaliana.
+    :param outdir: Output directory.
+    :param sources: Annotation sources. Defaults to GO:BP, GO:MF, GO:CC and KEGG.
+    :param user_threshold: P value threshold. Defaults to 0.05.
+    :returns: Dict with the results path and the number of terms.
+    """
     if targets_file is None:
         raise ValueError("targets_file is required")
     if organism is None:
@@ -42,6 +52,7 @@ def run_enrichment(targets_file=None, organism=None, outdir=".", sources=None, u
         "sources": sources,
         "user_threshold": user_threshold,
     }
+    log.info(f"Requesting g:Profiler enrichment for {len(genes)} genes ({organism})")
     response = requests.post("https://biit.cs.ut.ee/gprofiler/api/gost/profile/", json=payload, timeout=120)
     response.raise_for_status()
     data = response.json()
@@ -62,4 +73,5 @@ def run_enrichment(targets_file=None, organism=None, outdir=".", sources=None, u
     out_path = os.path.join(annotation_dir, "enrichment_results.tsv")
     out_df.to_csv(out_path, sep="\t", index=False)
 
+    log.info(f"Enrichment returned {len(out_df)} terms")
     return {"enrichment_results": out_path, "count_terms": len(out_df)}

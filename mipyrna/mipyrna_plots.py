@@ -234,14 +234,17 @@ def plotHeatmap(degDF=None, combinations=None, num=50, figdim=(12, 10), extraCol
 
 
 def _insertEllipse(ax, x, y, w, h, a, fillcolor):
+    """Add a filled ellipse to a Venn diagram."""
     ax.add_patch(patches.Ellipse(xy=(x, y), width=w, height=h, angle=a, linewidth=2, color=fillcolor))
 
 
 def _insertText(ax, x, y, text, fontsize=None, col="black", ha="center", va="center", fontweight=600):
+    """Add a text label to a Venn diagram."""
     ax.text(x, y, text, horizontalalignment=ha, verticalalignment=va, fontsize=fontsize, fontweight=fontweight, color=col)
 
 
 def _mature_idrateCollection(data=None):
+    """Return the set of mature_ids in each region of a Venn diagram, keyed by membership bits."""
     if data is None:
         raise ValueError("data is required")
 

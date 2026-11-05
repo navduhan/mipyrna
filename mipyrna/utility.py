@@ -1,8 +1,6 @@
-#!/usr/bin/python3
+"""Shared helper functions for miPyRNA.
 
-"""
-title: miPyRNA utility functions
-Author: Naveen Duhan
+:Author: Naveen Duhan
 """
 
 import configparser
@@ -115,6 +113,7 @@ def read_input_file(infile, inpath, paired = False):
 
 
 def fasta_to_df(file):
+    """Read a FASTA file into a dataframe with id, seq and description."""
 
     colums = ['id', 'seq', 'description']
 
@@ -127,6 +126,7 @@ def fasta_to_df(file):
     return seqdf
 
 def get_sequence(reference_fasta, coordinates):
+        """Return the sequence for [chrom, start, end, strand] from a reference FASTA."""
         
         sequences = pyfaidx.Fasta(reference_fasta)
 
@@ -238,6 +238,7 @@ def clusterRun(job_name='pysirna',sout="pysirna", serror="pysirna", partition='c
 
 
 def local_run(program=None, command="", outdir=".", message=None):
+    """Run a shell command locally, writing its output to <program>.out and <program>.err."""
 
     if message is None:
         message = {}
@@ -245,8 +246,11 @@ def local_run(program=None, command="", outdir=".", message=None):
 
         with open(os.path.join(outdir, f"{program}.out"), 'w+') as fout:
                 with open(os.path.join(outdir, f"{program}.err"), 'w+') as ferr:
-                    subprocess.call(command, shell=True,stdout=fout,stderr=ferr)
-                    log.info(f"Job successfully submited for {message}")
+                    rc = subprocess.call(command, shell=True,stdout=fout,stderr=ferr)
+                    if rc != 0:
+                        log.warning(f"{program} exited with code {rc}; see {program}.err")
+                    else:
+                        log.info(f"Job successfully submited for {message}")
     except Exception:
         
         log.error("Job sumission failed")
@@ -385,6 +389,7 @@ def make_directory(dir, dryrun=False):
     return outdir
 
 def preprocess(df, classLabel,size):
+    """Convert a list of feature dictionaries to an array with a matching label list."""
     tmp = []
     _classLabels = []
     
@@ -405,6 +410,7 @@ def preprocess(df, classLabel,size):
     return aa, _classLabels
 
 def replace_U_with_T(input_file, output_file):
+    """Write a copy of a FASTA file with U replaced by T in the sequences."""
     with open(input_file) as f_in:
         fasta_lines = f_in.readlines()
 

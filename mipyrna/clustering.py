@@ -1,3 +1,10 @@
+"""Clustering of aligned small RNA reads.
+
+Groups reads into candidate loci with a bx-python ClusterTree and filters
+clusters by size and length.
+
+:Author: Naveen Duhan
+"""
 
 import collections
 
@@ -8,8 +15,10 @@ from tqdm import tqdm
 
 
 class Cluster_reads:
+    """Cluster aligned reads into candidate miRNA loci."""
 
     def __init__(self,  cluster_distance=10, min_size=3,min_length=20, max_length=24, key='align_id'):
+        """Set the clustering distance, minimum cluster size and read length range."""
 
 
         self.cluster_distance = cluster_distance
@@ -19,6 +28,11 @@ class Cluster_reads:
         self.max = max_length
 
     def get_clusters(self, samples):
+        """Cluster the reads of each sample.
+
+        :param samples: Dict of sample name to [group, replicate, aligned reads dataframe].
+        :returns: Dict of sample name to [group, replicate, reads dataframe, clusters dataframe].
+        """
         output = {}
         for key, sample in tqdm(samples.items(), desc="Processing samples"):
             filtered_reads = sample[2][(sample[2].length<=self.max) & (sample[2].length>=self.min)]

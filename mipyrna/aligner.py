@@ -1,10 +1,11 @@
-#!/usr/bin/python
-"""
-title: mipyrna aligner module 
+"""Bowtie index building and read alignment wrappers.
 
-Author: Naveen Duhan
+Defines Bowtie_Aligner, which builds Bowtie indexes and aligns reads to a
+reference or to the miRBase hairpin and mature sets.
 
+:Author: Naveen Duhan
 """
+
 import gzip
 import importlib.resources as ir
 import os
@@ -33,6 +34,7 @@ class Bowtie_Aligner:
     """
 
     def __init__(self, ref_genome=None, configFile=None, outdir=".", slurm=False, dryrun=False):
+        """Set the reference, output directory and execution mode (local or SLURM)."""
         if ref_genome is None:
             raise ValueError("ref_genome is required")
 
@@ -59,6 +61,7 @@ class Bowtie_Aligner:
 
 
     def build_index(self, mem=20, tasks = 1, cpu = 8, dep=""):
+        """Build a Bowtie index for the reference genome."""
 
         const = ['--threads','-p']
 
@@ -167,6 +170,8 @@ class Bowtie_Aligner:
                     with open(os.path.join(output, "bowtie_build.out"), 'w+') as fout:
                             with open(os.path.join(output, "bowtie_build.err"), 'w+') as ferr:
                                 job_id = subprocess.call(bowtie_command, shell=True,stdout=fout,stderr=ferr)
+                                if job_id != 0:
+                                    log.warning(f"command exited with code {job_id}: {bowtie_command}")
 
                                 log.info(f"Job successfully submited for {GenomeFasta} for indexing")
 
@@ -178,6 +183,7 @@ class Bowtie_Aligner:
 
 
     def check_index(self):
+        """Return the Bowtie index files if the index exists, otherwise False."""
 
         output = os.path.join(self.outdir, 'bowtie_index')
 
@@ -332,6 +338,8 @@ class Bowtie_Aligner:
                                 with open(os.path.join(output, "bowtie.out"), 'w+') as fout:
                                     with open(os.path.join(output, "bowtie.err"), 'w+') as ferr:
                                         job = subprocess.call(bowtie_command, shell=True,stdout=fout,stderr=ferr)
+                                        if job != 0:
+                                            log.warning(f"command exited with code {job}: {bowtie_command}")
                                         job_id.append(job)
                                         log.info(f"Job successfully completed for {outPrefix} for alignment")
 
@@ -394,6 +402,8 @@ class Bowtie_Aligner:
                         with open(os.path.join(output, "bowtie.out"), 'w+') as fout:
                             with open(os.path.join(output, "bowtie.err"), 'w+') as ferr:
                                 job = subprocess.call(bowtie_command, shell=True,stdout=fout,stderr=ferr)
+                                if job != 0:
+                                    log.warning(f"command exited with code {job}: {bowtie_command}")
                                 job_id.append(job)
                                 log.info(f"Job successfully completed for {outBAM} for alignment")
 

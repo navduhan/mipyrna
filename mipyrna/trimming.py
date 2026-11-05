@@ -1,9 +1,6 @@
-#!/usr/bin/env python3
+"""Adapter and quality trimming of reads.
 
-"""
-:Title: This modules contains read quality check functions for mipyrna
-
-:Created: May 20, 2021
+Wraps Trimmomatic, Flexbar and Trim Galore.
 
 :Author: Naveen Duhan
 """
@@ -167,6 +164,8 @@ def flexbarRun(sampleDict,  configFile=None, slurm=False, mem=10, cpu=8, task=1,
 
                                 job = subprocess.call(
                                     flexbarCmd, shell=True, stdout=fout, stderr=ferr)
+                                if job != 0:
+                                    log.warning(f"command exited with code {job}: {flexbarCmd}")
 
                                 job_id.append(" ")
 
@@ -348,6 +347,8 @@ def trimmomaticRun(sampleDict=None, configFile=None, slurm=False, mem=10, cpu=8,
                             with open(os.path.join(output, "trimmomatic.err"), 'w+') as ferr:
                                 job = subprocess.call(
                                     trimmomaticCmd, shell=True, stdout=fout, stderr=ferr)
+                                if job != 0:
+                                    log.warning(f"command exited with code {job}: {trimmomaticCmd}")
                                 job_id.append(job)
                                 log.info(
                                     f"Job successfully completed for {inputPair} ")
@@ -513,6 +514,8 @@ def trim_galoreRun(sampleDict=None, configFile=None, slurm=False, mem=10, cpu=8,
                             with open(os.path.join(output, "trim_galore.err"), 'w+') as ferr:
                                 job = subprocess.call(
                                     trim_galoreCmd, shell=True, stdout=fout, stderr=ferr)
+                                if job != 0:
+                                    log.warning(f"command exited with code {job}: {trim_galoreCmd}")
                                 job_id.append(" ")
                                 log.info(
                                     f"Job successfully completed for {inputPair} ")

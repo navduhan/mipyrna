@@ -1,11 +1,7 @@
-#!/usr/bin/env python3
+"""Logging setup for miPyRNA.
 
-'''
-:Title: This is loggin module for miPyRNA
-
-:Author : Naveen Duhan
-'''
-
+:Author: Naveen Duhan
+"""
 
 import logging
 

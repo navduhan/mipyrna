@@ -1,3 +1,11 @@
+"""Read processing helpers.
+
+Defines Read_process, which collapses, filters and converts small RNA reads
+and extracts sequences from a reference.
+
+:Author: Naveen Duhan
+"""
+
 import gzip
 import multiprocessing
 import os
@@ -9,15 +17,22 @@ import pyfaidx as pf
 from Bio import Seq, SeqIO
 from tqdm import tqdm
 
+from mipyrna.logger import MiPyRNALogger
+
+log = MiPyRNALogger(mode='a', log='reads')
+
 
 class Read_process:
+    """Collapse, parse and query small RNA reads."""
 
     def __init__(self,  reference=None):
+        """Set the optional reference FASTA."""
 
         self.ref = reference
 
 
     def _collapse_process_sample(self, key, sample, outdir):
+        """Collapse identical reads of one sample into a FASTA with read counts."""
         collapsed_reads = {}
         
         if sample[2].endswith(".gz"):
@@ -46,6 +61,7 @@ class Read_process:
         return key, [sample[0], sample[1], output]
     
     def collapse_reads(self, samples, outdir):
+        """Collapse the reads of all samples."""
         outreads = {}
 
         with multiprocessing.Pool(processes=4) as pool:
@@ -58,6 +74,7 @@ class Read_process:
         return outreads
 
     def process_sample(self, key, sample, alignType):
+        """Parse the alignments of one sample (SAM or Bowtie output) into a dataframe."""
         areads = []
         count = 1
 
@@ -70,8 +87,8 @@ class Read_process:
                         areads.append([r.read.name, seq, r.iv.chrom, r.iv.strand, r.iv.start, r.iv.end, len(str(seq)), readcounts[1], int(readcounts[2].replace('x', '')), count])
                         count += 1
                         
-                except Exception:
-                    continue
+                except Exception as exc:
+                    log.debug(f"Skipping unparsable alignment {r.read.name}: {exc}")
 
         elif alignType == 'BWT':
             df = pd.read_csv(sample[2], sep="\t", header=None)
@@ -121,6 +138,7 @@ class Read_process:
         return key, [sample[0], sample[1], pd.DataFrame(areads, columns=['read_name', 'seq', 'name', 'strand', 'start', 'end', 'length', 'read_id', 'reads', 'align_id'])]
 
     def aligned_reads(self, samples, alignType='SAM'):
+        """Parse the alignments of all samples."""
         outaligned = {}
 
         with multiprocessing.Pool(processes=4) as pool:
@@ -131,6 +149,7 @@ class Read_process:
         return outaligned
     
     def get_consensus_read(self, ref_precursor, aligned_cluster):
+        """Return the most abundant read of a cluster, preferring one found in the precursor."""
 
         mature_read = None
         seq_start = 'start' if aligned_cluster.iloc[0].strand == '+' else 'end'
@@ -153,6 +172,7 @@ class Read_process:
         return mature_read
     
     def get_sequence(self, coordinates):
+        """Return the reference sequence for [chrom, start, end]."""
         
         sequences = pf.Fasta(self.ref)
 

@@ -1,10 +1,11 @@
-#!/usr/bin/python
-'''
-Title: Class to remove non-coding RNA families from processed reads
+"""Removal of non-coding RNA families from processed reads.
 
-Author: Naveen Duhan
+Aligns reads against the bundled Rfam ncRNA sequences (extracted into the
+output directory at runtime) and removes the matching reads.
 
-'''
+:Author: Naveen Duhan
+"""
+
 import importlib.resources as ir
 import os
 import shutil
@@ -17,8 +18,10 @@ from mipyrna.reads import Read_process
 
 
 class FilterRNAfamlies:
+    """Remove reads from known non-coding RNA families."""
 
     def __init__(self, samples=None,  outdir=".", slurm=False):
+        """Set the samples and output directory."""
         
         self.samples = samples
         
@@ -28,6 +31,7 @@ class FilterRNAfamlies:
 
     
     def _extract_rfam_unmapped(self, samples, rfam_samples):
+        """Write the reads that did not match Rfam to a FASTA file per sample."""
         
         outfiltered = {}
         
@@ -55,6 +59,7 @@ class FilterRNAfamlies:
         return outfiltered
     
     def align_rfam(self, cpu=8,mem=20):
+        """Align reads to the bundled Rfam sequences; return the alignments and the remaining reads."""
 
         ncRNA_file = os.path.join(self.outdir, "ncRNA_rfam.fa")
 

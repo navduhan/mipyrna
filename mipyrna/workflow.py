@@ -25,11 +25,13 @@ log = MiPyRNALogger(mode='a', log='workflow')
 
 
 def _write_collapsed_fasta(samples, outdir):
+    """Collapse the reads of every sample into FASTA files."""
     collapsed = Read_process().collapse_reads(samples=samples, outdir=outdir)
     return collapsed
 
 
 def _combine_fastas(files, output):
+    """Concatenate the existing FASTA files into one."""
     with open(output, "w") as out:
         for fpath in files:
             if fpath is None or not os.path.exists(fpath):
@@ -55,6 +57,7 @@ def run_workflow(
     cpu=8,
     mem=20
 ):
+    """Run the full pipeline from raw reads to differential expression, targets and report."""
     output = mu.make_directory(outdir)
     parsed = mu.read_input_file(infile=input_file, inpath=input_path, paired=paired)
     samples = parsed["samples"]
@@ -71,6 +74,7 @@ def run_workflow(
 
     working_samples = samples
     if run_trim:
+        log.info("Trimming reads")
         trimmed, _ = trimmomaticRun(sampleDict=samples, outDir=output, paired=paired)
         working_samples = trimmed
         if run_qc:
@@ -80,15 +84,18 @@ def run_workflow(
             except Exception as exc:
                 log.warning(f"Trimmed FastQC step skipped due to error: {exc}")
 
+    log.info("Collapsing reads")
     collapse_dir = mu.make_directory(os.path.join(output, "collapsed_reads"))
     collapsed = _write_collapsed_fasta(working_samples, collapse_dir)
 
+    log.info("Aligning reads to the genome")
     aln = Bowtie_Aligner(ref_genome=genome, outdir=output, slurm=False)
     aln.build_index(cpu=cpu, mem=mem)
     aligned_files = aln.run_alignment(samplesDict=collapsed, fileType='fasta', outType='SAM', cpu=cpu, mem=mem)
     aligned_reads = Read_process().aligned_reads(samples=aligned_files, alignType='SAM')
     clusters = Cluster_reads().get_clusters(aligned_reads)
 
+    log.info("Predicting novel miRNAs")
     novel = Novel_miRNA(
         samples=clusters,
         genome=genome,
@@ -107,6 +114,7 @@ def run_workflow(
         novel_df.to_csv(novel_txt, sep="\t", index=False)
         metadata["novel_file"] = novel_txt
 
+    log.info("Quantifying miRNAs")
     quant_ref = _combine_fastas([known_fasta, novel_fasta], os.path.join(output, "combined_miRNA.fa"))
     quant = Quantifier(sRNA_file=quant_ref, samples=collapsed, outdir=output, slurm=False)
     counts = quant.quantify_expression(cpu=cpu, mem=mem)
@@ -114,6 +122,7 @@ def run_workflow(
     counts.to_csv(counts_file, sep="\t", index=False)
     metadata["counts_file"] = counts_file
 
+    log.info("Running differential expression")
     try:
         deg = runDESeq2(countDF=counts.copy(), targetFile=targets, combination=combinations, mirna_column='mature_id')
         deg_file = os.path.join(output, "DESeq2_results.tsv")
@@ -123,6 +132,7 @@ def run_workflow(
         log.warning(f"Differential expression step skipped due to error: {exc}")
 
     if mrna_file is not None and os.path.exists(mrna_file):
+        log.info("Predicting targets")
         try:
             target_results = run_targets(miRNA_file=quant_ref, mRNA_file=mrna_file, outdir=output, dryrun=False)
             metadata["targets_file"] = target_results.get("parsed_output")
@@ -136,6 +146,7 @@ def run_workflow(
         except Exception as exc:
             log.warning(f"Target/enrichment stage skipped due to error: {exc}")
 
+    log.info("Writing report")
     report_path, meta_path = generate_report(outdir=output, metadata=metadata)
     metadata["report_file"] = report_path
     metadata["metadata_file"] = meta_path

@@ -1,12 +1,9 @@
-#!/usr/bin/env python3
+"""Differential expression of miRNAs from raw read counts.
 
-'''
-:Title: This module finds differentially expressed genes from raw read counts
-
-:Created: October 22, 2021
+Runs DESeq2 through rpy2 and writes normalized counts, DEG tables and plots.
 
 :Author: Naveen Duhan
-'''
+"""
 
 import logging
 from typing import Any

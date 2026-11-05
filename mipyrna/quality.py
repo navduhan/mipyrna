@@ -1,7 +1,6 @@
-#!/usr/bin/env python3
+"""Read quality checks.
 
-"""
-:Title: This modules contains read quality check function
+Runs FastQC on raw and trimmed reads.
 
 :Author: Naveen Duhan
 """
@@ -180,6 +179,8 @@ def fastqcRun(sampleDict=None, configFile=None,slurm=False, mem=10, cpu=8, task=
                         with open(os.path.join(output,"fastqc.out"), 'w+') as fout:
                             with open(os.path.join(output,"fastqc.err"), 'w+') as ferr:
                                 job = subprocess.call(fastqcCmd, shell=True, stdout=fout, stderr=ferr)
+                                if job != 0:
+                                    log.warning(f"command exited with code {job}: {fastqcCmd}")
 
                                 job_id.append(" ")    
 

@@ -19,16 +19,19 @@ MIRNA_CLASS = 0
 
 
 def _models_dir():
+    """Return the packaged models directory."""
     return ir.files("mipyrna").joinpath("data", "models")
 
 
 def _checksums():
+    """Return the SHA-256 checksums of the packaged models."""
     lines = _models_dir().joinpath("SHA256SUMS").read_text().splitlines()
     return {l.split()[1]: l.split()[0] for l in lines if l.strip()}
 
 
 @cache
 def load_model_for(species_type) -> Any:
+    """Load the bundled model for plants or animals after verifying its checksum."""
     if species_type not in ("plants", "animals"):
         raise ValueError(f"species_type must be 'plants' or 'animals', got {species_type!r}")
     from keras.models import load_model
@@ -44,6 +47,7 @@ def load_model_for(species_type) -> Any:
 
 
 def model_info(species_type):
+    """Return the model file and its checksum for the run report."""
     rel = f"{species_type}/model.keras"
     return {rel: _checksums()[rel]}
 
