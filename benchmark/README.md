@@ -45,7 +45,7 @@ Install environment (includes `miRDeep2`):
 
 ```bash
 conda env create -f ../mipyrna_environment.yaml
-conda activate mipyrna-0.5
+conda activate mipyrna
 ```
 
 Then run benchmark template after downloading FASTQ files:

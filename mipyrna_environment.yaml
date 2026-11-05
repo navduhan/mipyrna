@@ -1,4 +1,4 @@
-name: mipyrna-0.5
+name: mipyrna
 channels:
   - conda-forge
   - bioconda
