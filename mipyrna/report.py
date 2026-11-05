@@ -51,6 +51,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.platypus import (
     Image,
     KeepTogether,
+    PageBreak,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -695,6 +696,7 @@ def _expression(meta, base, counts_df, deg):
         return out
     comparisons = [c[4:-1] for c in deg.columns if c.startswith("FDR(")]
     out += [
+        PageBreak(),
         Paragraph("Differential expression", H1),
         Paragraph(
             f"Differential expression was tested with DESeq2. A miRNA is called significant at FDR below {SIG_FDR} and "
@@ -861,16 +863,18 @@ def generate_report(outdir=".", metadata=None):
     params = meta.get("parameters", {})
     dirs = meta.get("stage_dirs", {})
 
-    story = (
-        _overview(meta, params, counts)
-        + _inputs(meta, params)
-        + _reads(meta, dirs)
-        + _discovery(meta, params, outdir, known, novel)
-        + _expression(meta, outdir, counts_df, deg)
-        + _targets(meta, outdir, counts)
-        + _files(meta, outdir)
-        + _software(meta)
-    )
+    sections = [
+        _overview(meta, params, counts),
+        _inputs(meta, params),
+        _reads(meta, dirs),
+        _discovery(meta, params, outdir, known, novel),
+        _expression(meta, outdir, counts_df, deg),
+        _targets(meta, outdir, counts),
+        _files(meta, outdir) + _software(meta),
+    ]
+    story = []
+    for section in filter(None, sections):
+        story += ([PageBreak()] if story else []) + section
     doc = SimpleDocTemplate(
         report_path,
         pagesize=A4,
