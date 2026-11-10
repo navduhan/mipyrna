@@ -134,7 +134,7 @@ def _check_read_policy(output, resume, rfam_filter):
     QC and collapsed reads remain reusable. Older discovery caches predate both
     deterministic cluster ordering and the Rfam annotations, so they need a new run.
     """
-    policy = {"revision": "ordered-rfam-v1", "rfam_filter": rfam_filter}
+    policy = {"revision": "ordered-labelled-rfam15.1-v1", "rfam_filter": rfam_filter}
     path = os.path.join(output, ".resume", "read_policy.json")
     temp = os.path.join(output, "3.miRNA_Discovery", "temp")
     cached = os.path.exists(os.path.join(output, ".resume", "align.json")) or (
@@ -359,7 +359,8 @@ def run_workflow(
             "filter": rfam_filter,
             "reference": os.path.join(rfam_dir, "ncRNA_results", "ncRNA_rfam.fa"),
             "match_rule": "exact, both strands, one representative hit per read; no multi-hit suppression",
-            "labels": "sequence accessions (family names unavailable in the bundled FASTA)",
+            "labels": "Rfam family accession:name; all memberships of the representative matched sequence",
+            "reference_info": rfam.reference_info,
             "samples": rfam_counts,
         }
         if rfam_filter:

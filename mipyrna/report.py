@@ -675,10 +675,13 @@ def _discovery(meta, params, base, known, novel):
         out += [
             Paragraph("Rfam ncRNA alert", H2),
             Paragraph(
-                "Reads were also aligned to the bundled Rfam non-coding RNA set. "
+                f"Reads were also aligned to the bundled Rfam {escape(str(rfam.get('reference_info', {}).get('release', '')))} "
+                "non-miRNA reference. "
                 f"{flagged:,} reads ({unique:,} unique) matched and were {action}. "
                 "Each call reports the number of its supporting reads that matched Rfam in "
-                "rfam_reads and the Rfam sequence identifiers in Rfam.",
+                "rfam_reads and the family accessions and names in Rfam. One representative "
+                "sequence is retained per read; its family labels are not an exhaustive list "
+                "of every possible family match for a short read.",
                 BODY,
             ),
         ]

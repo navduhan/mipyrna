@@ -51,6 +51,7 @@ Classes / Functions / Exceptions:
 """
 
 import configparser
+import hashlib
 import math
 import os
 import pickle
@@ -230,6 +231,15 @@ def write_fasta(records, output):
             fp.write(f">{name}\n{sequence}\n")
 
     return output
+
+
+def file_sha256(path):
+    """Return a file's SHA-256 without loading it into memory."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def get_sequence(reference_fasta, coordinates):

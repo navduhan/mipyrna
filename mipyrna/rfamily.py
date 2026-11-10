@@ -23,6 +23,7 @@ Classes / Functions / Exceptions:
 """
 
 import importlib.resources as ir
+import json
 import os
 import shutil
 import tarfile
@@ -47,6 +48,7 @@ class FilterRNAfamlies:
         self.samples = samples or {}
         
         self.slurm = slurm
+        self.reference_info = {}
         
         self.outdir = mu.make_directory(os.path.join(outdir, "ncRNA_results"))
 
@@ -95,13 +97,21 @@ class FilterRNAfamlies:
 
         ncRNA_file = os.path.join(self.outdir, "ncRNA_rfam.fa")
 
-        if not os.path.exists(ncRNA_file):
-            with tarfile.open(str(ir.files("mipyrna").joinpath("data/ncRNA_rfam.tar.gz")), "r:gz") as tar:
+        with tarfile.open(str(ir.files("mipyrna").joinpath("data/ncRNA_rfam.tar.xz")), "r:xz") as tar:
+            manifest = tar.extractfile("rfam_manifest.json")
+            if manifest is None:
+                raise ValueError("The bundled Rfam archive has no provenance manifest")
+            with manifest:
+                self.reference_info = json.load(manifest)
+            if not os.path.exists(ncRNA_file):
                 source = tar.extractfile("ncRNA_rfam.fa")
                 if source is None:
                     raise ValueError("The bundled Rfam archive has no ncRNA FASTA")
-                with source, open(ncRNA_file, "wb") as target:
+                with source, open(ncRNA_file + ".tmp", "wb") as target:
                     shutil.copyfileobj(source, target)
+                os.replace(ncRNA_file + ".tmp", ncRNA_file)
+        if mu.file_sha256(ncRNA_file) != self.reference_info["fasta_sha256"]:
+            raise ValueError("The extracted Rfam reference differs from the bundle; use a new --outdir")
         
         config = str(ir.files("mipyrna").joinpath("param/bowtie_rfam.ini"))
         aln = Bowtie_Aligner(
@@ -115,6 +125,13 @@ class FilterRNAfamlies:
         )
         
         ncRNA_reads = Read_process().aligned_reads(samples=results, alignType='SAM', jobs=jobs)
+        for sample in ncRNA_reads.values():
+            frame = sample[2].copy()
+            # Deduplicated sequences retain every family in their FASTA identifier.
+            frame["name"] = frame["name"].str.split("|", regex=False).str[1:]
+            if frame["name"].map(len).eq(0).any():
+                raise ValueError("Rfam alignment contains a reference without family labels")
+            sample[2] = frame.explode("name", ignore_index=True)
         
         remaining = (
             self._extract_rfam_unmapped(samples=self.samples, rfam_samples=ncRNA_reads)

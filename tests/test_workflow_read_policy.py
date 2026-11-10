@@ -82,6 +82,7 @@ class WorkflowRfamWiringTests(unittest.TestCase):
                     patch("mipyrna.workflow.generate_report", return_value=("report.pdf", "metadata.json")),
                 ):
                     screen.return_value.align_rfam.return_value = ({"s": ["s", "group", reads]}, filtered)
+                    screen.return_value.reference_info = {"release": "15.1", "fasta_sha256": "test-reference"}
                     aligner.return_value.run_alignment.return_value = {"s": ["s", "group", "reads.sam"]}
                     reader.return_value.aligned_reads.return_value = {}
                     clusterer.return_value.get_clusters.return_value = {}

@@ -177,7 +177,7 @@ mipyrna report --outdir results
 ### Rfam alerts and optional filtering
 
 The workflow always screens collapsed reads against the bundled Rfam ncRNA
-sequences with exact Bowtie matches on either strand. Reads with many matching
+sequences (release 15.1, all non-miRNA families) with exact Bowtie matches on either strand. Reads with many matching
 reference sequences are not suppressed; one representative match is retained
 per read. Without `--rfam-filter`, all reads remain available to discovery,
 the known scan and quantification. With the flag, matching reads are removed
@@ -189,9 +189,10 @@ before all three steps. `rfam_filter = false` is the default INI setting.
 - `rfam_reads`: supporting read copies that also matched Rfam, counted once
   per collapsed read. Discovery rows describe the sample supporting that row;
   alignment-only rows and the scan table sum support over samples.
-- `Rfam`: sorted representative sequence accessions, or `-` for no match.
-  The bundled FASTA lacks Rfam family labels, so these are **not family names**
-  or an exhaustive list of matching Rfam entries.
+- `Rfam`: sorted family accessions and names, such as `RF00005:tRNA`, or `-`
+  for no match. Identical reference sequences are stored once with all their
+  family memberships preserved. The labels describe the representative matched
+  sequence, not an exhaustive list of every possible family for an ambiguous read.
 
 Filtered runs normally have zero Rfam support in their call tables because
 matching reads have already been removed. The PDF and workflow metadata retain
@@ -201,6 +202,20 @@ An alert is not proof that a miRNA call is false, particularly for short reads.
 Reads are canonically ordered before clustering to remove SAM-record-order
 effects. Resume rejects older alignment/discovery caches, or caches generated
 with a different `rfam_filter` setting; use a new output directory for those runs.
+
+The XZ-compressed bundle excludes families annotated as miRNA, normalises U to T and includes
+the family metadata, source checksums, build manifest and Rfam's CC0 licence.
+Runtime extraction verifies the FASTA checksum and requires no network access.
+To rebuild it separately from analysis, from the repository root:
+
+```bash
+PYTHONPATH=. python scripts/build_rfam_reference.py \
+  --cache /path/to/rfam_downloads --outdir /path/to/new_bundle --jobs 4
+```
+
+The builder uses versioned official Rfam URLs and verifies pinned family metadata.
+Its output directory must be new; inspect the resulting archive and manifest
+before replacing `mipyrna/data/ncRNA_rfam.tar.xz`.
 
 Benchmarking Against miRDeep2
 -----------------------------

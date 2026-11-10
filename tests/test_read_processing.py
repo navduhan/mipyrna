@@ -1,6 +1,7 @@
 """Focused read-processing tests; no external tools or workflow runs are launched."""
 
 import io
+import json
 import tarfile
 import tempfile
 import unittest
@@ -72,6 +73,7 @@ class RfamTests(unittest.TestCase):
         self.assertEqual(options[options.index("-v") + 1], "0")
         self.assertEqual(options[options.index("-k") + 1], "1")
         self.assertNotIn("-m", options)
+        self.assertNotIn("--strata", options)
         self.assertNotIn("--norc", options)
 
     def test_alignment_and_optional_fasta_filter(self):
@@ -81,23 +83,33 @@ class RfamTests(unittest.TestCase):
             mu.write_fasta([("s_1_x7", "ACGT"), ("s_2_x3", "TGCA")], str(source))
             resources = root / "resources"
             (resources / "data").mkdir(parents=True)
-            content = b">ref1\nACGT\n"
-            with tarfile.open(resources / "data/ncRNA_rfam.tar.gz", "w:gz") as archive:
+            content = b">rfam_1|RF00001:5S_rRNA|RF00002:5_8S_rRNA\nACGT\n"
+            with tarfile.open(resources / "data/ncRNA_rfam.tar.xz", "w:xz") as archive:
                 entry = tarfile.TarInfo("ncRNA_rfam.fa")
                 entry.size = len(content)
                 archive.addfile(entry, io.BytesIO(content))
+                reference = root / "reference.fa"
+                reference.write_bytes(content)
+                manifest = json.dumps({"release": "15.1", "fasta_sha256": mu.file_sha256(reference)}).encode()
+                entry = tarfile.TarInfo("rfam_manifest.json")
+                entry.size = len(manifest)
+                archive.addfile(entry, io.BytesIO(manifest))
             samples = {"s": ["s", "group", str(source)]}
-            frame = pd.DataFrame({"read_name": ["s_1_x7", "s_1_x7"], "name": ["ref1", "ref2"], "reads": [7, 7]})
-            parsed = {"s": ["s", "group", frame]}
+            frame = pd.DataFrame({
+                "read_name": ["s_1_x7"], "name": ["rfam_1|RF00001:5S_rRNA|RF00002:5_8S_rRNA"], "reads": [7],
+            })
             screen = FilterRNAfamlies(samples=samples, outdir=temp)
             with (
                 patch("mipyrna.rfamily.ir.files", return_value=resources),
                 patch("mipyrna.rfamily.Bowtie_Aligner") as aligner,
-                patch.object(Read_process, "aligned_reads", return_value=parsed),
+                patch.object(Read_process, "aligned_reads", side_effect=[
+                    {"s": ["s", "group", frame.copy()]}, {"s": ["s", "group", frame.copy()]},
+                ]),
             ):
                 hits, kept = screen.align_rfam(cpu=4, jobs=2, filter_reads=False)
                 self.assertIs(kept, samples)
-                self.assertIs(hits, parsed)
+                self.assertEqual(set(hits["s"][2]["name"]), {"RF00001:5S_rRNA", "RF00002:5_8S_rRNA"})
+                self.assertEqual(hits["s"][2].drop_duplicates("read_name")["reads"].sum(), 7)
                 self.assertFalse((Path(screen.outdir) / "rfam_filtered_reads").exists())
                 call = aligner.return_value.run_alignment.call_args
                 assert call is not None
@@ -105,8 +117,13 @@ class RfamTests(unittest.TestCase):
                 self.assertEqual(options["outType"], "SAM")
                 self.assertEqual((options["cpu"], options["jobs"]), (4, 2))
                 _, filtered = screen.align_rfam(filter_reads=True)
+                aligner.reset_mock()
+                (Path(screen.outdir) / "ncRNA_rfam.fa").write_text("stale reference\n")
+                with self.assertRaisesRegex(ValueError, "differs from the bundle"):
+                    screen.align_rfam()
+                aligner.assert_not_called()
             self.assertEqual(list(mu.read_fasta(filtered["s"][2])), [("s_2_x3", "TGCA")])
-            self.assertEqual((Path(screen.outdir) / "ncRNA_rfam.fa").read_bytes(), content)
+            self.assertEqual(screen.reference_info["release"], "15.1")
 
     def test_empty_rfam_hits_preserve_reads(self):
         with tempfile.TemporaryDirectory() as temp:
