@@ -9,6 +9,8 @@ cpu = 160
 jobs = 6
 trimmer = trimmomatic
 skip_qc = true
+read_cutoff = 50
+min_mature_reads = 10
 
 [slurm]
 partition = compute

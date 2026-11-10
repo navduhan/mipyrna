@@ -135,6 +135,8 @@ def build_parser(defaults=None):
     wf.add_argument("--resume", action="store_true", help="Reuse --outdir and skip the stages and samples an earlier run finished")
     wf.add_argument("--require-star", action="store_true", help="Keep only novel miRNAs with star reads")
     wf.add_argument("--weighted", action="store_true", help="Share each read across the miRNAs it maps to when counting")
+    wf.add_argument("--read-cutoff", type=int, default=50, help="Minimum reads of a cluster to build candidates (default: 50)")
+    wf.add_argument("--min-mature-reads", type=int, default=10, help="Minimum mature reads of a candidate (default: 10)")
     wf.add_argument("--min-star-reads", type=int, default=1, help="Star reads needed with --require-star (default: 1)")
     wf.add_argument("--max-inconsistent", type=float, default=0.1, help="Maximum fraction of hairpin reads outside the mature and star positions (default: 0.1)")
     wf.add_argument("--min-novel-score", type=float, default=1.0, help="Minimum heuristic score of a novel miRNA (default: 1.0)")
@@ -267,6 +269,8 @@ def main(argv=None):
             mem=args.mem,
             adapter=args.adapter,
             require_star=args.require_star,
+            read_cutoff=args.read_cutoff,
+            min_mature_reads=args.min_mature_reads,
             min_star_reads=args.min_star_reads,
             weighted=args.weighted,
             max_inconsistent=args.max_inconsistent,

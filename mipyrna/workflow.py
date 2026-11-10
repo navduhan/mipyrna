@@ -140,6 +140,8 @@ def run_workflow(
     adapter=None,
     trimmer="trimmomatic",
     require_star=False,
+    read_cutoff=50,
+    min_mature_reads=10,
     min_star_reads=1,
     weighted=False,
     max_inconsistent=0.1,
@@ -169,6 +171,8 @@ def run_workflow(
         adapter (str, optional): 3' adapter name or sequence. Auto-detected when None.
         trimmer (str): ``'trimmomatic'``, ``'flexbar'`` or ``'trim_galore'``. Defaults to ``'trimmomatic'``.
         require_star (bool): Keep only novel miRNAs with star reads. Defaults to False.
+        read_cutoff (int): Minimum reads of a cluster to build candidates. Defaults to 50.
+        min_mature_reads (int): Minimum mature reads of a candidate. Defaults to 10.
         min_star_reads (int): Star reads needed when ``require_star`` is set. Defaults to 1.
         weighted (bool): Share each read across the miRNAs it maps to when counting. Defaults to False.
         max_inconsistent (float): Maximum fraction of the reads on a novel hairpin outside the mature and star positions. Defaults to 0.1.
@@ -299,6 +303,8 @@ def run_workflow(
         outdir=mirna_dir,
         filter_criteria='strict',
         require_star=require_star,
+        read_cutoff=read_cutoff,
+        min_mature_reads=min_mature_reads,
         min_star_reads=min_star_reads,
         max_inconsistent=max_inconsistent,
         min_novel_score=min_novel_score,
