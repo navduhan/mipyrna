@@ -9,3 +9,8 @@ cpu = 160
 jobs = 6
 trimmer = trimmomatic
 skip_qc = true
+
+[slurm]
+partition = compute
+account =
+time = 3-00:00:00

@@ -30,9 +30,12 @@ Classes / Functions / Exceptions:
     - fasta_to_df: FASTA to dataframe
     - get_sequence: Extract a sequence from a reference FASTA
     - parse_config_file: Parse a program INI file
-    - clusterRun: Submit a SLURM job
+    - set_slurm, slurm_preflight: Scheduler options and a usability check
+    - sbatch_args, clusterRun: Build and submit a SLURM job, optionally as an array
+    - use_array, Shell, run_array: Run per-sample commands and method calls as SLURM job arrays
     - local_run: Run commands locally
-    - check_status: Check a SLURM job
+    - check_status, wait_for: Check or wait for a SLURM job
+    - resolve_cpu: Default core budget
     - get_cpu: CPU count to use
     - split_cpu: Split cores into jobs and threads
     - replace_cpu: Set the thread option of a tool config
@@ -50,9 +53,13 @@ Classes / Functions / Exceptions:
 import configparser
 import math
 import os
+import pickle
 import re
+import shlex
+import shutil
 import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
@@ -266,43 +273,196 @@ def parse_config_file(infile):
     
     return sections_dict
 
-def clusterRun(job_name='pysirna',sout="pysirna", serror="pysirna", partition='compute', command='command', time=4, mem=10, cpu=8, tasks=1, dep=''):
-    """Submit a job to a cluster with the SLURM scheduler.
+_slurm = {}
+_array = {}
+_SLURM_KEYS = ("partition", "account", "time", "qos", "constraint", "reservation", "gres", "extra")
+_SLURM_FAILED = ("FAILED", "CANCELLED", "TIMEOUT", "OUT_OF_MEMORY", "NODE_FAIL", "BOOT_FAIL", "DEADLINE")
+
+
+def set_slurm(**options):
+    """Set the scheduler options used for every job submitted with :func:`clusterRun`.
+
+    Args:
+        **options: Any of ``partition``, ``account``, ``time``, ``qos``, ``constraint``,
+            ``reservation``, ``gres`` and ``extra`` (raw ``sbatch`` arguments). Empty values are ignored.
+
+    Raises:
+        ValueError: If an option name is not known.
+    """
+    unknown = set(options) - set(_SLURM_KEYS)
+    if unknown:
+        raise ValueError(f"Unknown Slurm option(s): {', '.join(sorted(unknown))}")
+    _slurm.clear()
+    _slurm.update({k: v for k, v in options.items() if v})
+
+
+def use_array(cpu=None, mem=None, limit=None):
+    """Run the per-sample commands of :func:`local_run` as Slurm job arrays.
+
+    Args:
+        cpu: CPUs of each array element, or None to switch the arrays off.
+        mem: Memory in GB of each array element.
+        limit: Maximum elements running at once.
+    """
+    _array.clear()
+    if cpu:
+        _array.update(cpu=cpu, mem=mem, limit=limit)
+
+
+def slurm_preflight():
+    """Check that Slurm can be used from the current shell.
+
+    Raises:
+        SystemExit: If ``sbatch`` is not on the path or ``squeue`` does not answer.
+    """
+    if shutil.which("sbatch") is None:
+        raise SystemExit("Slurm is not available: sbatch was not found in PATH")
+    check = subprocess.run(["squeue", "-h", "-u", os.environ.get("USER", "")], capture_output=True, text=True)
+    if check.returncode != 0:
+        raise SystemExit(f"Slurm is not usable from this shell: {check.stderr.strip()}")
+
+
+def sbatch_args(job_name='mipyrna', sout="mipyrna", serror="mipyrna", partition=None, command='command', time=None, mem=None, cpu=8, tasks=1, dep='', array=None, env=None):
+    """Build the ``sbatch`` command for a job.
+
+    The partition, account, time limit and other scheduler options come from :func:`set_slurm`;
+    without a partition the one of the current Slurm job is used, if any.
 
     Args:
         job_name: SLURM job name.
         sout: Prefix of the standard output file (``.out`` is appended).
         serror: Prefix of the standard error file (``.err`` is appended).
-        partition: SLURM partition.
+        partition: SLURM partition; overrides the configured one.
         command: Command to execute.
-        time: Time allotment in hours.
-        mem: Memory in GB.
+        time: Time limit in SLURM format; overrides the configured one.
+        mem: Memory in GB, or None to leave it to the cluster.
         cpu: CPUs per task.
         tasks: Number of tasks.
         dep: Job id this job depends on (``afterok``).
+        array: Array specification such as ``0-5%3``.
+        env: Extra environment variables passed to the job.
+
+    Returns:
+        list: The ``sbatch`` command and its arguments.
+    """
+    partition = partition or _slurm.get("partition") or os.environ.get("SLURM_JOB_PARTITION")
+    time = time or _slurm.get("time")
+    args = ["sbatch", "--parsable", "-J", job_name, "-o", f"{sout}.out", "-e", f"{serror}.err"]
+    args += ["--cpus-per-task", str(cpu), "--ntasks", str(tasks)]
+    if partition:
+        args += ["-p", partition]
+    if time:
+        args += ["-t", str(time)]
+    if mem:
+        args += [f"--mem={mem}G"]
+    for key, flag in (("account", "-A"), ("qos", "--qos"), ("constraint", "-C"), ("reservation", "--reservation"), ("gres", "--gres")):
+        if _slurm.get(key):
+            args += [flag, _slurm[key]]
+    if array:
+        args += [f"--array={array}"]
+    if dep != '':
+        args += [f"--dependency=afterok:{dep}", "--kill-on-invalid-dep=yes"]
+    if env:
+        args += ["--export=ALL," + ",".join(f"{k}={v}" for k, v in env.items())]
+    args += shlex.split(_slurm.get("extra", ""))
+    return [*args, "--wrap", command]
+
+
+def clusterRun(job_name='mipyrna', sout="mipyrna", serror="mipyrna", partition=None, command='command', time=None, mem=None, cpu=8, tasks=1, dep='', array=None, env=None):
+    """Submit a job to a cluster with the SLURM scheduler.
+
+    Args:
+        job_name: SLURM job name.
+        sout: Prefix of the standard output file (``.out`` is appended; ``%a`` is the array index).
+        serror: Prefix of the standard error file (``.err`` is appended).
+        partition: SLURM partition; overrides the one set with :func:`set_slurm`.
+        command: Command to execute.
+        time: Time limit in SLURM format; overrides the one set with :func:`set_slurm`.
+        mem: Memory in GB, or None to leave it to the cluster.
+        cpu: CPUs per task.
+        tasks: Number of tasks.
+        dep: Job id this job depends on (``afterok``).
+        array: Array specification such as ``0-5%3``.
+        env: Extra environment variables passed to the job.
 
     Returns:
         The SLURM job id.
 
     Raises:
-        Exception: Re-raised if job submission fails.
+        RuntimeError: If job submission fails.
     """
-    try:
-        if dep != '':
-            
-            dep = f'--dependency=afterok:{dep} --kill-on-invalid-dep=yes '
-
-        sbatch_command = f'sbatch -J {job_name} -o {sout}.out -e {serror}.err -t {time}:00:00 -p {partition} --mem={mem}000 --cpus-per-task={cpu} --ntasks={tasks} --wrap="{command}" {dep}'
-
-        sbatch_response = subprocess.getoutput(sbatch_command)
-
-        job_id = sbatch_response.split(' ')[-1].strip()
-
-    except Exception:
-
+    result = subprocess.run(
+        sbatch_args(job_name, sout, serror, partition, command, time, mem, cpu, tasks, dep, array, env),
+        capture_output=True,
+        text=True,
+    )
+    job_id = result.stdout.strip().split(';')[0]
+    if result.returncode != 0 or not job_id.isdigit():
         log.error("Job submission failed")
-        raise
+        raise RuntimeError(f"sbatch failed: {result.stderr.strip() or result.stdout.strip()}")
+    return job_id
 
+
+class Shell:
+    """Run one shell command, as an element of a Slurm job array."""
+
+    def run(self, name, cmd, logdir):
+        """Run a command, writing its output to ``<logdir>/<name>.out`` and ``.err``.
+
+        Args:
+            name: Output file prefix.
+            cmd: Shell command.
+            logdir: Directory of the output files.
+
+        Raises:
+            RuntimeError: If the command exits with a non-zero code.
+        """
+        with open(os.path.join(logdir, f"{name}.out"), "w") as fout, open(os.path.join(logdir, f"{name}.err"), "w") as ferr:
+            rc = subprocess.call(cmd, shell=True, stdout=fout, stderr=ferr)
+        if rc != 0:
+            raise RuntimeError(f"{name} exited with code {rc}; see {logdir}/{name}.err")
+
+
+def run_array(tasks, outdir, name, cpu, mem=None, limit=None):
+    """Run ``method(*args)`` calls as one Slurm job array and wait for it.
+
+    The tasks are pickled to ``outdir``, so it must be on storage shared with the compute
+    nodes. Each array element runs ``python -m mipyrna._worker`` on one task, with the
+    environment of the submitting process.
+
+    Args:
+        tasks: List of ``(object, method name, args tuple)``.
+        outdir: Step directory; output and error files go to its ``logs`` subdirectory.
+        name: Job name and file prefix.
+        cpu: CPUs of each array element.
+        mem: Memory in GB of each array element.
+        limit: Maximum elements running at once. Defaults to all.
+
+    Returns:
+        The SLURM job id.
+
+    Raises:
+        RuntimeError: If a job fails or is cancelled.
+    """
+    outdir = os.path.abspath(outdir)
+    logdir = os.path.join(outdir, "logs")
+    os.makedirs(logdir, exist_ok=True)
+    manifest = os.path.join(outdir, f"{name}_tasks.pkl")
+    with open(manifest, "wb") as fh:
+        pickle.dump(tasks, fh)
+    spec = f"0-{len(tasks) - 1}" + (f"%{max(1, limit)}" if limit else "")
+    job_id = clusterRun(
+        job_name=name,
+        sout=os.path.join(logdir, f"{name}_%a"),
+        serror=os.path.join(logdir, f"{name}_%a"),
+        command=f"{shlex.quote(sys.executable)} -m mipyrna._worker {shlex.quote(manifest)}",
+        mem=mem,
+        cpu=cpu,
+        array=spec,
+    )
+    log.info(f"Submitted {len(tasks)} {name} job(s) as Slurm array {job_id}")
+    wait_for(job_id)
+    os.remove(manifest)
     return job_id
 
 
@@ -349,6 +509,19 @@ def local_run(program=None, command: str | dict = "", outdir=".", message=None, 
             log.info(f"{name} finished")
         return rc
 
+    if isinstance(command, dict) and _array and command:
+        log.info(f"Submitting {program} for {len(command)} sample(s) as a Slurm job array")
+        shell = Shell()
+        run_array(
+            [(shell, "run", (f"{program}_{k}", cmd, logdir)) for k, cmd in command.items()],
+            outdir=outdir,
+            name=program,
+            cpu=_array["cpu"],
+            mem=_array["mem"],
+            limit=_array["limit"],
+        )
+        return dict.fromkeys(command, 0)
+
     if isinstance(command, dict):
         log.info(f"Running {program} on {len(command)} sample(s), {jobs} at a time")
         with ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
@@ -358,19 +531,58 @@ def local_run(program=None, command: str | dict = "", outdir=".", message=None, 
 
 
 def check_status(job_id):
-    """Check the status of a SLURM job.
+    """Check a SLURM job.
+
+    Args:
+        job_id: SLURM job id; for an array, all its elements.
+
+    Returns:
+        True if the job has left the queue, otherwise False.
+
+    Raises:
+        RuntimeError: If the finished job, or any element of it, failed, timed out or was cancelled.
+    """
+    queue = subprocess.run(["squeue", "-h", "-j", str(job_id)], capture_output=True, text=True)
+    if queue.stdout.strip():
+        return False
+    acct = subprocess.run(["sacct", "-X", "-n", "-P", "-j", str(job_id), "-o", "JobID,State"], capture_output=True, text=True)
+    bad = [line.replace("|", " ") for line in acct.stdout.splitlines() if line.split("|")[-1].startswith(_SLURM_FAILED)]
+    if bad:
+        raise RuntimeError(f"Slurm job {job_id} did not finish: {'; '.join(bad)}")
+    return True
+
+
+def wait_for(job_id, interval=10):
+    """Wait until a SLURM job has finished.
 
     Args:
         job_id: SLURM job id.
+        interval: Seconds between checks. Defaults to 10.
+
+    Raises:
+        RuntimeError: If the job failed, timed out or was cancelled.
+    """
+    while not check_status(job_id):
+        time.sleep(interval)
+
+
+def resolve_cpu(cpu, jobs, tasks, slurm=False):
+    """Choose the total core budget when the user gave none.
+
+    Args:
+        cpu: Total cores, or None.
+        jobs: Samples to run at once, or None.
+        tasks: Number of samples.
+        slurm: With Slurm every sample job gets 20 cores by default; locally the default is 8 cores.
 
     Returns:
-        True if the job is no longer in the queue, otherwise False.
+        int: Total cores.
     """
-    d = subprocess.check_output('squeue -j '+str(job_id), shell=True, universal_newlines=True)
-
-    data = list(re.split(r"\s+ ", d))
-
-    return len(data) == 6
+    if cpu is not None:
+        return int(cpu)
+    if slurm:
+        return 20 * max(1, min(int(jobs or tasks), int(tasks)))
+    return 8
 
 def get_cpu():
 

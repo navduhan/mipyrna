@@ -135,8 +135,10 @@ class Read_process:
                 try:
                     if r.aligned:
                         seq = r.read.seq.decode()
-                        readcounts = r.read.name.split("_")
-                        areads.append([r.read.name, seq, r.iv.chrom, r.iv.strand, r.iv.start, r.iv.end, len(str(seq)), readcounts[1], int(readcounts[2].replace('x', '')), count])
+                        name = r.read.name
+                        read_id = name.rsplit("_x", 1)[0].rsplit("_", 1)[-1]
+                        reads = int(name.rsplit("_x", 1)[1]) if "_x" in name else 1
+                        areads.append([name, seq, r.iv.chrom, r.iv.strand, r.iv.start, r.iv.end, len(str(seq)), read_id, reads, count])
                         count += 1
                         
                 except Exception as exc:

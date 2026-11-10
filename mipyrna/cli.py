@@ -10,13 +10,15 @@ Features:
     - ``enrich``: g:Profiler functional enrichment
     - ``report``: PDF report generation
     - ``--check`` and ``--version`` global options
+    - ``--slurm``: submit the workflow as a Slurm job that scores samples as a job array
 
 Configuration:
     Options are given on the command line. Results of the sub-commands are
     printed as JSON, or written to the file given by ``--output`` for ``predict``.
     The workflow options can also be read from a ``[workflow]`` section of an INI
     file with ``mipyrna -c config.ini`` (or ``mipyrna workflow -c config.ini``);
-    flags given on the command line override the file. See ``config.ini.example``.
+    flags given on the command line override the file. A ``[slurm]`` section holds
+    ``partition``, ``account``, ``time``, ``qos``, ``constraint``, ``reservation``, ``gres`` and ``extra``. See ``config.ini.example``.
 
 Dependencies:
     - argparse: Argument parsing
@@ -32,6 +34,7 @@ Classes / Functions / Exceptions:
 import argparse
 import configparser
 import json
+import os
 import sys
 from importlib.metadata import PackageNotFoundError, version
 
@@ -66,6 +69,20 @@ def load_config(path):
     if not cp.has_section("workflow"):
         raise SystemExit(f"No [workflow] section in {path}")
     return {k.replace("-", "_"): v for k, v in cp.items("workflow")}
+
+
+def load_slurm(path):
+    """Read the optional ``[slurm]`` section of a config file.
+
+    Args:
+        path (str): Path to an INI file.
+
+    Returns:
+        dict: Scheduler option names mapped to their string values; empty without the section.
+    """
+    cp = configparser.ConfigParser()
+    cp.read(path)
+    return dict(cp.items("slurm")) if cp.has_section("slurm") else {}
 
 
 def build_parser(defaults=None):
@@ -110,14 +127,21 @@ def build_parser(defaults=None):
     wf.add_argument("--mrna-file")
     wf.add_argument("--enrichment-organism")
     wf.add_argument("--run-enrichment", action="store_true")
-    wf.add_argument("--cpu", type=int, default=8, help="Total cores for the run")
+    wf.add_argument("--cpu", type=int, help="Total cores for the run (default: 8, or 20 per sample with --slurm)")
     wf.add_argument("--jobs", type=int, help="Samples to run at once; each gets cpu // jobs cores (default: one per 4 cores)")
     wf.add_argument("--mem", type=int, default=20)
     wf.add_argument("--adapter", help="3' adapter: kit name or sequence (default: auto-detect)")
     wf.add_argument("--dryrun", action="store_true", help="Show the QC, trimming and alignment commands without running them")
     wf.add_argument("--resume", action="store_true", help="Reuse --outdir and skip the stages and samples an earlier run finished")
     wf.add_argument("--require-star", action="store_true", help="Keep only novel miRNAs with star reads")
+    wf.add_argument("--weighted", action="store_true", help="Share each read across the miRNAs it maps to when counting")
     wf.add_argument("--min-star-reads", type=int, default=1, help="Star reads needed with --require-star (default: 1)")
+    wf.add_argument("--max-inconsistent", type=float, default=0.1, help="Maximum fraction of hairpin reads outside the mature and star positions (default: 0.1)")
+    wf.add_argument("--min-novel-score", type=float, default=1.0, help="Minimum heuristic score of a novel miRNA (default: 1.0)")
+    wf.add_argument("--slurm", action="store_true", help="Submit the run as a Slurm job; samples are scored as a job array")
+    wf.add_argument("--partition", help="Slurm partition")
+    wf.add_argument("--account", help="Slurm account")
+    wf.add_argument("--time", help="Slurm time limit of every job, for example 3-00:00:00")
     wf.add_argument("--trimmer", choices=["trimmomatic", "flexbar", "trim_galore"], default="trimmomatic")
 
     wf.add_argument("-c", "--config-file", default=argparse.SUPPRESS, help="INI file with a [workflow] section")
@@ -158,6 +182,40 @@ def build_parser(defaults=None):
     return parser
 
 
+def submit_controller(args, argv):
+    """Submit the workflow itself as a Slurm job and print its job id.
+
+    The job gets ``cpu // jobs`` cores, 20 by default, and runs the same command inside Slurm.
+
+    Args:
+        args (argparse.Namespace): Parsed workflow arguments.
+        argv (list, optional): The original command-line arguments.
+
+    Returns:
+        int: Process exit code.
+    """
+    import shlex
+
+    from mipyrna import utility as mu
+
+    n = len(mu.read_input_file(infile=args.input_file, inpath=args.input_path, paired=args.paired)["samples"])
+    cpu = mu.resolve_cpu(args.cpu, args.jobs, n, True)
+    per_sample = max(1, cpu // max(1, min(args.jobs or n, n)))
+    outdir = os.path.abspath(args.outdir)
+    os.makedirs(outdir, exist_ok=True)
+    command = " ".join(shlex.quote(a) for a in [sys.executable, "-m", "mipyrna", *(argv if argv is not None else sys.argv[1:])])
+    job_id = mu.clusterRun(
+        job_name="mipyrna",
+        sout=os.path.join(outdir, "mipyrna_slurm"),
+        serror=os.path.join(outdir, "mipyrna_slurm"),
+        command=command,
+        cpu=per_sample,
+        mem=args.mem,
+    )
+    print(f"Submitted mipyrna as Slurm job {job_id}; output in {outdir}/mipyrna_slurm.out")
+    return 0
+
+
 def main(argv=None):
     """Run the command-line interface.
 
@@ -182,6 +240,14 @@ def main(argv=None):
         missing = [o for o in ("input_file", "input_path", "genome", "species") if not getattr(args, o)]
         if missing:
             parser.error("workflow requires " + ", ".join("--" + o.replace("_", "-") for o in missing))
+        if args.slurm:
+            from mipyrna import utility as mu
+            mu.slurm_preflight()
+            options = load_slurm(config_file) if config_file else {}
+            options.update({k: getattr(args, k) for k in ("partition", "account", "time") if getattr(args, k)})
+            mu.set_slurm(**options)
+            if not os.environ.get("SLURM_JOB_ID") and not args.dryrun:
+                return submit_controller(args, argv)
         from mipyrna.workflow import run_workflow
         meta = run_workflow(
             input_file=args.input_file,
@@ -202,6 +268,10 @@ def main(argv=None):
             adapter=args.adapter,
             require_star=args.require_star,
             min_star_reads=args.min_star_reads,
+            weighted=args.weighted,
+            max_inconsistent=args.max_inconsistent,
+            min_novel_score=args.min_novel_score,
+            slurm=args.slurm,
             trimmer=args.trimmer,
             dryrun=args.dryrun,
             resume=args.resume

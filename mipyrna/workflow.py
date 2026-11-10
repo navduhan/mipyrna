@@ -121,25 +121,6 @@ def _write_collapsed_fasta(samples, outdir, jobs=4):
     return collapsed
 
 
-def _combine_fastas(files, output):
-    """Concatenate FASTA files into one, skipping missing files.
-
-    Args:
-        files (list): FASTA paths. None or non-existent paths are ignored.
-        output (str): Path of the combined FASTA.
-
-    Returns:
-        str: The ``output`` path.
-    """
-    with open(output, "w") as out:
-        for fpath in files:
-            if fpath is None or not os.path.exists(fpath):
-                continue
-            with open(fpath) as fh:
-                out.write(fh.read().rstrip() + "\n")
-    return output
-
-
 def run_workflow(
     input_file,
     input_path,
@@ -153,13 +134,17 @@ def run_workflow(
     run_enrichment_stage=False,
     mrna_file=None,
     enrichment_organism=None,
-    cpu=8,
+    cpu=None,
     mem=20,
     jobs=None,
     adapter=None,
     trimmer="trimmomatic",
     require_star=False,
     min_star_reads=1,
+    weighted=False,
+    max_inconsistent=0.1,
+    min_novel_score=1.0,
+    slurm=False,
     dryrun=False,
     resume=False
 ):
@@ -178,13 +163,19 @@ def run_workflow(
         run_enrichment_stage (bool): Run functional enrichment of targets. Defaults to False.
         mrna_file (str, optional): mRNA FASTA enabling target prediction.
         enrichment_organism (str, optional): g:Profiler organism code for enrichment.
-        cpu (int): Total cores. Defaults to 8.
+        cpu (int, optional): Total cores. Defaults to 8, or 20 per sample with ``slurm``.
         mem (int): Memory in GB. Defaults to 20.
         jobs (int, optional): Samples to run at once. Derived from ``cpu`` when None.
         adapter (str, optional): 3' adapter name or sequence. Auto-detected when None.
         trimmer (str): ``'trimmomatic'``, ``'flexbar'`` or ``'trim_galore'``. Defaults to ``'trimmomatic'``.
         require_star (bool): Keep only novel miRNAs with star reads. Defaults to False.
         min_star_reads (int): Star reads needed when ``require_star`` is set. Defaults to 1.
+        weighted (bool): Share each read across the miRNAs it maps to when counting. Defaults to False.
+        max_inconsistent (float): Maximum fraction of the reads on a novel hairpin outside the mature and star positions. Defaults to 0.1.
+        min_novel_score (float): Minimum heuristic score of a novel miRNA. Defaults to 1.0.
+        slurm (bool): Run each sample of the heavy steps as an element of a Slurm job array with ``cpu // jobs`` cores.
+            Trimming, FastQC and the alignments are submitted as arrays too; collapsing and clustering run in
+            this process, which should itself be a Slurm job. Defaults to False.
         dryrun (bool): Log the QC, trimming and alignment commands without running them or
             creating any files, then stop. Defaults to False.
         resume (bool): Reuse ``outdir`` and skip the QC, trimming, collapsing and alignment
@@ -221,10 +212,18 @@ def run_workflow(
         "stage_dirs": {},
         **provenance(species_type),
     }
-    jobs, threads = mu.split_cpu(cpu, jobs, len(samples))
-    log.info(f"Using {cpu} cores: {jobs} sample(s) at once, {threads} thread(s) each")
-    metadata["parameters"].update(cpu=cpu, samples_at_once=jobs, threads_per_sample=threads)
+    cpu = mu.resolve_cpu(cpu, jobs, len(samples), slurm)
+    score_jobs, score_threads = mu.split_cpu(cpu, jobs, len(samples))
+    if slurm:
+        jobs, _ = mu.split_cpu(score_threads, None, len(samples))
+        threads = score_threads
+        log.info(f"Using Slurm: {score_jobs} scoring job(s) at once with {score_threads} core(s) each")
+    else:
+        jobs, threads = score_jobs, score_threads
+        log.info(f"Using {cpu} cores: {jobs} sample(s) at once, {threads} thread(s) each")
+    metadata["parameters"].update(cpu=cpu, samples_at_once=score_jobs, threads_per_sample=score_threads, slurm=slurm)
 
+    mu.use_array(score_threads if slurm and not dryrun else None, mem, score_jobs)
     qc_dir = _stage_dir(output, "1.Quality_and_trimming", dryrun=dryrun) if run_qc or run_trim else output
     if run_qc:
         try:
@@ -301,15 +300,19 @@ def run_workflow(
         filter_criteria='strict',
         require_star=require_star,
         min_star_reads=min_star_reads,
-        workers=threads,
-        jobs=jobs,
+        max_inconsistent=max_inconsistent,
+        min_novel_score=min_novel_score,
+        workers=score_threads,
+        jobs=score_jobs,
         resume=resume,
+        slurm=slurm and not dryrun,
+        mem=mem,
     )
     metadata["parameters"].update(
         filter_criteria=novel.filterCriteria,
         read_cutoff=novel.readsCutoff,
         cluster_cutoff=novel.clusterCutoff,
-        precursor_step=novel.precursorStep,
+        max_extension=novel.max_extension,
         score_cutoff=novel.score,
         randfold_iterations=novel.randfold_iterations,
         randfold_pvalue_cutoff=novel.randfold_pvalue_cutoff,
@@ -334,8 +337,17 @@ def run_workflow(
     log.info("Quantifying miRNAs")
     quant_dir = _stage_dir(output, "4.Quantification")
     metadata["stage_dirs"]["quantification"] = quant_dir
-    quant_ref = _combine_fastas([known_fasta, novel_fasta], os.path.join(quant_dir, "combined_miRNA.fa"))
-    quant = Quantifier(sRNA_file=quant_ref, samples=collapsed, outdir=quant_dir, slurm=False)
+    mirnas = []
+    if isinstance(known_df, pd.DataFrame):
+        known_unique = known_df.drop_duplicates(subset=["Known_ID"])
+        mirnas += list(zip(known_unique["Known_ID"], known_unique["precursor"], known_unique["mature"]))
+    if isinstance(novel_df, pd.DataFrame):
+        mirnas += list(zip(novel_df["Novel_ID"], novel_df["precursor"], novel_df["mature"]))
+    quant_ref = os.path.join(quant_dir, "miRNA_mature.fa")
+    with open(quant_ref, "w") as fh:
+        for name, _hairpin, mature in mirnas:
+            fh.write(f">{name}\n{mature}\n")
+    quant = Quantifier(miRNAs=mirnas, samples=collapsed, outdir=quant_dir, slurm=False, weighted=weighted)
     counts = quant.quantify_expression(cpu=cpu, mem=mem)
     counts_file = os.path.join(quant_dir, "Raw_read_counts.tsv")
     counts.to_csv(counts_file, sep="\t", index=False)
