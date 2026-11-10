@@ -14,8 +14,8 @@ Features:
 
 Configuration:
     Inputs are a miRBase species code, species class (plants or animals) and an
-    output directory. Writes `<species>_known_mature.fa` and the downloaded
-    database FASTA files to the output directory.
+    output directory. Writes `<species>_known_mature.fa`, the downloaded database
+    FASTA files and `known_reference_sources.tsv` to the output directory.
 
 Dependencies:
     - pandas: Species lookup and summaries
@@ -36,7 +36,6 @@ import importlib.resources as ir
 import os
 
 import pandas as pd
-from Bio import SeqIO
 
 from mipyrna import utility as mu
 from mipyrna.logger import MiPyRNALogger
@@ -77,8 +76,7 @@ def _read_mature(fasta, prefix=None):
     Returns:
         list: (id, sequence) tuples with sequences upper-cased and U converted to T.
     """
-    return [(r.id, str(r.seq).upper().replace('U', 'T')) for r in SeqIO.parse(fasta, 'fasta')
-            if prefix is None or r.id.startswith(prefix)]
+    return mu.read_fasta(fasta, prefix=prefix)
 
 
 def get_known_reference(species, species_class, outdir='.'):
@@ -120,12 +118,18 @@ def get_known_reference(species, species_class, outdir='.'):
 
     mature = os.path.join(outdir, f'{species}_known_mature.fa')
     sources = {}
-    with open(mature, 'w') as fp:
-        for seq, (mid, databases) in by_seq.items():
-            if mid in sources:
-                continue
-            fp.write(f">{mid}\n{seq}\n")
-            sources[mid] = ','.join(databases)
+    records = []
+    for seq, (mid, databases) in by_seq.items():
+        if mid in sources:
+            continue
+        records.append((mid, seq))
+        sources[mid] = ','.join(databases)
+    mu.write_fasta(records, mature)
+
+    with open(os.path.join(outdir, 'known_reference_sources.tsv'), 'w') as fp:
+        fp.write('Known_ID\tDatabase\n')
+        for mid, databases in sorted(sources.items()):
+            fp.write(f'{mid}\t{databases}\n')
 
     return {'mature': mature, 'sources': sources}
 

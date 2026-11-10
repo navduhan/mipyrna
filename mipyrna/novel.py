@@ -70,7 +70,7 @@ FLANKS = (5, 15, 30, 50)
 LOCAL_EXTENSION = 100
 
 
-def _enclosing_pair(pt, i, j):
+def enclosing_pair(pt, i, j):
     """
     Find the base pair that directly encloses a base pair.
 
@@ -93,7 +93,7 @@ def _enclosing_pair(pt, i, j):
     return None
 
 
-def _stem_loop(pt, anchor, max_length):
+def stem_loop(pt, anchor, max_length):
     """
     Climb from a base pair to the outer pair of the stem-loop that contains it.
 
@@ -110,7 +110,7 @@ def _stem_loop(pt, anchor, max_length):
     """
     i, j = sorted((anchor, pt[anchor]))
     while True:
-        outer = _enclosing_pair(pt, i, j)
+        outer = enclosing_pair(pt, i, j)
         if outer is None or outer[1] - outer[0] + 1 > max_length:
             return i, j
         branches, k = 0, outer[0] + 1
@@ -123,6 +123,294 @@ def _stem_loop(pt, anchor, max_length):
         if branches > 1:
             return i, j
         i, j = outer
+
+
+def fold_precursor(seq):
+    """
+    Fold a sequence and return its structure and minimum free energy.
+
+    Args:
+        seq (str): RNA sequence.
+
+    Returns:
+        tuple: Dot-bracket structure and minimum free energy.
+
+    Raises:
+        TypeError, ValueError, RuntimeError: If folding fails.
+    """
+
+    try:
+        x = RNA.fold(seq)
+    except (TypeError, ValueError, RuntimeError) as exc:
+        log.warning(f"RNA folding failed: {exc}")
+        raise
+    return x
+
+
+def bulge_graph(seq):
+    """
+    Fold a sequence and return its forgi bulge graph.
+
+    Args:
+        seq (str): DNA or RNA sequence; T is converted to U.
+
+    Returns:
+        forgi.graph.bulge_graph.BulgeGraph: Graph of the folded structure.
+    """
+
+    seq = seq.replace("T", "U")
+    pstructure, _pmfe = RNA.fold(seq)
+
+    return fgb.BulgeGraph.from_dotbracket(pstructure, seq)
+
+
+def find_close_match(preseq, seq):
+    """
+    Find where seq matches preseq with one mismatch, or -1.
+
+    Args:
+        preseq (str): Sequence to search in.
+        seq (str): Sequence to find.
+
+    Returns:
+        int: Start index of the first one-mismatch match, or -1 if none.
+    """
+
+    string_to_match = re.compile(
+        "|".join(seq[:i] + "." + seq[i + 1 :] for i in range(len(seq)))
+    )
+    m = string_to_match.findall(preseq)
+    if len(m) == 0:
+        return -1
+    idx = preseq.find(m[0])
+    return idx
+
+
+def find_subseq(seq, string):
+    """
+    Locate a mature sequence in a precursor, falling back to a one-mismatch match.
+
+    Args:
+        seq (str): Precursor sequence.
+        string (str): Mature sequence.
+
+    Returns:
+        int: Start index of the mature in the precursor, or -1 if not found.
+    """
+
+    for i in range(16, 4, -4):
+        c = seq.find(string[:i])
+        if c != -1:
+            return c
+    return find_close_match(seq, string)
+
+
+def check_mature_position(precursor, mature, bg=None):
+    """
+    Check where the mature sequence sits in the precursor structure.
+
+    Args:
+        precursor (str): Precursor sequence.
+        mature (str): Mature sequence.
+        bg (forgi.graph.bulge_graph.BulgeGraph, optional): Bulge graph of the precursor fold; folded here if not given.
+
+    Returns:
+        str or None: "ok", or the reason the check fails (e.g. "mature in loop"); None if no bulge graph is available.
+    """
+
+    if bg is None:
+        bg = bulge_graph(precursor)
+    start = find_subseq(precursor, mature) + 1
+    end = start + len(mature)
+    loops = list(bg.hloop_iterator())
+    if len(loops) == 0:
+        return "too many loops"
+    l = next(iter(bg.define_range_iterator("h0")))
+    if (start < l[0] and end > l[0]) or (start < l[1] and end > l[1]):
+        return "mature in loop"
+    p = next(iter(bg.stem_bp_iterator("s0")))
+
+    if start == 0:
+        return "mature not found"
+    if end > p[1] + 2:
+        return "3p mature outside"
+    if p[0] > start + 2:
+        return "mature unpaired"
+    return "ok"
+
+
+def estimate_star_sequence(precursor, mature, bg=None):
+    """
+    Estimate the star sequence from a given mature and precursor.
+
+    Args:
+        precursor (str): Precursor sequence.
+        mature (str): Mature sequence.
+        bg (forgi.graph.bulge_graph.BulgeGraph, optional): Bulge graph of the precursor fold; folded here if not given.
+
+    Returns:
+        str or None: Estimated star sequence, or None if it cannot be determined.
+    """
+
+    if bg is None:
+        bg = bulge_graph(precursor)
+    start = find_subseq(precursor, mature) + 1
+
+    for p in bg.adjacent_stem_pairs_iterator():
+        pp = [p[0], p[2]]
+        for s in pp:
+            xx = list(bg.stem_bp_iterator(s))
+            for i in xx:
+                if start == i[0]:
+                    star = precursor[i[1] - len(mature) + 2 : i[1] + 2]
+                    return star
+                elif start == i[1]:
+                    star = precursor[i[0] - len(mature) + 1 : i[0] + 2]
+                    return star
+    return
+
+
+def safe_star_sequence(precursor, mature, bg=None):
+    """
+    Estimate a star sequence and return None when it cannot be determined.
+
+    Args:
+        precursor (str): Precursor sequence.
+        mature (str): Mature sequence.
+        bg (forgi.graph.bulge_graph.BulgeGraph, optional): Bulge graph of the precursor fold; folded here if not given.
+
+    Returns:
+        str or None: Estimated star sequence, or None if the fold does not allow one.
+    """
+
+    try:
+        return estimate_star_sequence(precursor, mature, bg)
+    except (TypeError, ValueError, RuntimeError, StopIteration) as exc:
+        log.debug(f"Could not estimate a star sequence: {exc}")
+        return None
+
+
+def describe_precursor(precursor, mature, start=None, max_length=None):
+    """
+    Fold a precursor and describe where a mature sits in it.
+
+    Args:
+        precursor (str): Precursor sequence.
+        mature (str): Mature sequence.
+        start (int, optional): 0-based start of the mature in the precursor; located when not given.
+        max_length (int, optional): Maximum span of the stem-loop used for the arm label. Defaults to the precursor length.
+
+    Returns:
+        dict: Dot-bracket structure, minimum free energy, mature-position check, arm label and star sequence.
+
+    Raises:
+        TypeError, ValueError, RuntimeError: If folding or the position check fails.
+    """
+
+    rna = precursor.replace("T", "U")
+    struct, mfe = fold_precursor(rna)
+    bg = fgb.BulgeGraph.from_dotbracket(struct, rna)
+    check = check_mature_position(precursor, mature, bg)
+    pos = find_subseq(precursor, mature) if start is None else start
+    span = max_length or len(precursor)
+    centre = pos + len(mature) // 2 + 1
+    pt = RNA.ptable(struct)
+    paired = [k for k in range(pos + 1, pos + len(mature) + 1) if pt[k] != 0]
+    if paired:
+        i, j = stem_loop(pt, min(paired, key=lambda k: abs(k - centre)), span)
+    else:
+        i, j = 1, span
+
+    return {
+        "struct": struct,
+        "mfe": mfe,
+        "mature_check": check,
+        "position": "5-prime" if centre < (i + j) / 2 else "3-prime",
+        "star": safe_star_sequence(precursor, mature, bg),
+    }
+
+
+def fold_hairpins(reader, chrom, start, end, strand, mature, max_extension=LOCAL_EXTENSION):
+    """
+    Fold genomic windows around a mature and yield the hairpins that hold it.
+
+    The window is folded once per extension, the stem-loop around the mature is cut out and refolded
+    at several flank lengths. Candidates without a base pair inside the mature are skipped.
+
+    Args:
+        reader (Read_process): Reference reader used to fetch the window sequence.
+        chrom (str): Chromosome.
+        start (int): Leftmost genomic coordinate of the mature.
+        end (int): Rightmost genomic coordinate of the mature (exclusive).
+        strand (str): "+" or "-".
+        mature (str): Mature sequence in the orientation of the strand.
+        max_extension (int): Nucleotides folded on each side of the mature. Defaults to 100.
+
+    Yields:
+        dict: Candidate hairpin with sequence, structure, free energy, mature-position check, arm label, star and coordinates.
+    """
+
+    seqlen = len(mature)
+    seen = set()
+    for extension in sorted({min(LOCAL_EXTENSION, max_extension), max_extension}):
+        max_length = extension + seqlen
+        wstart = max(0, start - extension)
+        window = reader.get_sequence([chrom, wstart, end + extension, strand])
+        if not window:
+            continue
+        wend = wstart + len(window)
+        offset = start - wstart if strand == "+" else wend - end
+        pos = window.find(mature, max(0, offset - 5))
+        if pos < 0:
+            pos = find_subseq(window, mature)
+        if pos < 0:
+            continue
+
+        try:
+            md = RNA.md()
+            md.max_bp_span = max_length
+            wide, _ = RNA.fold_compound(window.replace("T", "U"), md).mfe()
+        except (TypeError, ValueError, RuntimeError) as exc:
+            log.warning(f"Could not fold {chrom}:{start}: {exc}")
+            continue
+        pt = RNA.ptable(wide)
+        centre = pos + seqlen // 2 + 1
+        paired = [k for k in range(pos + 1, pos + seqlen + 1) if pt[k] != 0]
+        if not paired:
+            continue
+        i, j = stem_loop(pt, min(paired, key=lambda k: abs(k - centre)), max_length)
+
+        for flank in FLANKS:
+            lo = max(0, min(i - 1, pos) - flank)
+            hi = min(len(window), max(j, pos + seqlen) + flank)
+            precursor = window[lo:hi]
+            if "N" in precursor or precursor in seen:
+                continue
+            seen.add(precursor)
+            try:
+                entry = describe_precursor(precursor, mature)
+            except (TypeError, ValueError, RuntimeError, StopIteration) as exc:
+                log.warning(f"Skipped precursor at {chrom}:{start}: {exc}")
+                continue
+            # Keep the arm label of the wide-window fold, as the discovery path always has.
+            entry["position"] = "5-prime" if centre < (i + j) / 2 else "3-prime"
+            if strand == "+":
+                pstart, pend = wstart + lo, wstart + hi
+            else:
+                pstart, pend = wend - hi, wend - lo
+            yield {
+                "chrom": chrom,
+                "mature": mature,
+                "mature_length": seqlen,
+                "precursor": precursor,
+                "precursor_length": len(precursor),
+                "start": pstart,
+                "end": pend,
+                "mature_start": start,
+                "strand": strand,
+                "hairpin_start": pos - lo,
+                **entry,
+            }
 
 
 def _init_worker(predictor):
@@ -265,12 +553,7 @@ class Novel_miRNA:
             TypeError, ValueError, RuntimeError: If folding fails.
         """
 
-        try:
-            x = RNA.fold(seq)
-        except (TypeError, ValueError, RuntimeError) as exc:
-            log.warning(f"RNA folding failed: {exc}")
-            raise
-        return x
+        return fold_precursor(seq)
 
     def get_bulge(self, seq):
         """
@@ -283,12 +566,7 @@ class Novel_miRNA:
             forgi.graph.bulge_graph.BulgeGraph: Graph of the folded structure.
         """
 
-        seq = seq.replace("T", "U")
-        pstructure, _pmfe = RNA.fold(seq)
-
-        bulge_graph = fgb.BulgeGraph.from_dotbracket(pstructure, seq)
-
-        return bulge_graph
+        return bulge_graph(seq)
 
     def close_match(self, preseq, seq):
         """
@@ -302,14 +580,7 @@ class Novel_miRNA:
             int: Start index of the first one-mismatch match, or -1 if none.
         """
 
-        string_to_match = re.compile(
-            "|".join(seq[:i] + "." + seq[i + 1 :] for i in range(len(seq)))
-        )
-        m = string_to_match.findall(preseq)
-        if len(m) == 0:
-            return -1
-        idx = preseq.find(m[0])
-        return idx
+        return find_close_match(preseq, seq)
 
     def find_subseq(self, seq, string):
         """
@@ -323,11 +594,7 @@ class Novel_miRNA:
             int: Start index of the mature in the precursor, or -1 if not found.
         """
 
-        for i in range(16, 4, -4):
-            c = seq.find(string[:i])
-            if c != -1:
-                return c
-        return self.close_match(seq, string)
+        return find_subseq(seq, string)
 
     def check_mature(self, precursor, mature, bg=None):
         """
@@ -342,25 +609,7 @@ class Novel_miRNA:
             str or None: "ok", or the reason the check fails (e.g. "mature in loop"); None if no bulge graph is available.
         """
 
-        if bg is None:
-            bg = self.get_bulge(precursor)
-        start = self.find_subseq(precursor, mature) + 1
-        end = start + len(mature)
-        loops = list(bg.hloop_iterator())
-        if len(loops) == 0:
-            return "too many loops"
-        l = next(iter(bg.define_range_iterator("h0")))
-        if (start < l[0] and end > l[0]) or (start < l[1] and end > l[1]):
-            return "mature in loop"
-        p = next(iter(bg.stem_bp_iterator("s0")))
-
-        if start == 0:
-            return "mature not found"
-        if end > p[1] + 2:
-            return "3p mature outside"
-        if p[0] > start + 2:
-            return "mature unpaired"
-        return "ok"
+        return check_mature_position(precursor, mature, bg)
 
     def find_star_sequence(self, precursor, mature, bg=None):
         """
@@ -375,22 +624,7 @@ class Novel_miRNA:
             str or None: Estimated star sequence, or None if it cannot be determined.
         """
 
-        if bg is None:
-            bg = self.get_bulge(precursor)
-        start = self.find_subseq(precursor, mature) + 1
-
-        for p in bg.adjacent_stem_pairs_iterator():
-            pp = [p[0], p[2]]
-            for s in pp:
-                xx = list(bg.stem_bp_iterator(s))
-                for i in xx:
-                    if start == i[0]:
-                        star = precursor[i[1] - len(mature) + 2 : i[1] + 2]
-                        return star
-                    elif start == i[1]:
-                        star = precursor[i[0] - len(mature) + 1 : i[0] + 2]
-                        return star
-        return
+        return estimate_star_sequence(precursor, mature, bg)
 
     def estimate_randfold_pvalue(self, precursor):
         """
@@ -496,104 +730,56 @@ class Novel_miRNA:
         seqlen = len(mature)
         maturecounts = filtered_cluster.reads.sum()
         putative_precursor = []
-        seen = set()
 
-        for extension in sorted(
-            {min(LOCAL_EXTENSION, self.max_extension), self.max_extension}
+        for entry in fold_hairpins(
+            reader, chrom, start, end, strand, mature, self.max_extension
         ):
-            max_length = extension + seqlen
-            wstart = max(0, start - extension)
-            window = reader.get_sequence([chrom, wstart, end + extension, strand])
-            wend = wstart + len(window)
-            offset = start - wstart if strand == "+" else wend - end
-            pos = window.find(mature, max(0, offset - 5))
-            if pos < 0:
-                pos = self.find_subseq(window, mature)
-            if pos < 0:
+            if entry["mature_check"] != "ok":
                 continue
 
-            try:
-                md = RNA.md()
-                md.max_bp_span = max_length
-                wide, _ = RNA.fold_compound(window.replace("T", "U"), md).mfe()
-            except (TypeError, ValueError, RuntimeError) as exc:
-                log.warning(f"Skipped cluster at {chrom}:{start}: {exc}")
+            m = Precursor_Features(entry["precursor"]).generate_features()
+            if m is None:
                 continue
-            pt = RNA.ptable(wide)
 
-            centre = pos + seqlen // 2 + 1
-            paired = [k for k in range(pos + 1, pos + seqlen + 1) if pt[k] != 0]
-            if not paired:
-                continue
-            i, j = _stem_loop(
-                pt, min(paired, key=lambda k: abs(k - centre)), max_length
+            pstart, pend = entry["start"], entry["end"]
+            star = entry["star"]
+            starcount = 0
+            inconsistent = 0.0
+            if other is not None and star is not None:
+                s = self.find_subseq(entry["precursor"], star)
+                if s >= 0:
+                    ss = pstart + s if strand == "+" else pend - s - len(star)
+                    sreads = other[
+                        (other.start >= ss - 2) & (other.end <= ss + len(star) + 3)
+                    ]
+                    starcount = sreads.reads.sum()
+            if other is not None:
+                on_hairpin = other[(other.start >= pstart) & (other.end <= pend)].reads.sum()
+                inconsistent = max(0, on_hairpin - starcount) / (maturecounts + on_hairpin)
+            putative_precursor.append(
+                {
+                    "chrom": chrom,
+                    "mature": mature,
+                    "mature_length": seqlen,
+                    "precursor": entry["precursor"],
+                    "precursor_length": entry["precursor_length"],
+                    "start": pstart,
+                    "end": pend,
+                    "mature_start": start,
+                    "strand": strand,
+                    "struct": entry["struct"],
+                    "mfe": entry["mfe"],
+                    "mature_check": "ok",
+                    "features": m,
+                    "mature_reads": maturecounts,
+                    "position": entry["position"],
+                    "star_reads": starcount,
+                    "inconsistent_fraction": inconsistent,
+                    "star": star,
+                    "randfold_pvalue": 1.0,
+                    "cluster": x.cluster,
+                }
             )
-
-            for flank in FLANKS:
-                lo = max(0, min(i - 1, pos) - flank)
-                hi = min(len(window), max(j, pos + seqlen) + flank)
-                precursor_seq = window[lo:hi]
-                if precursor_seq in seen or "N" in precursor_seq:
-                    continue
-                seen.add(precursor_seq)
-                try:
-                    pre = precursor_seq.replace("T", "U")
-                    struct, sc = RNA.fold(pre)
-                    bg = fgb.BulgeGraph.from_dotbracket(struct, pre)
-                    if self.check_mature(precursor_seq, mature, bg) != "ok":
-                        continue
-                except (TypeError, ValueError, RuntimeError) as exc:
-                    log.warning(
-                        f"Skipped precursor candidate at {chrom}:{start}: {exc}"
-                    )
-                    continue
-
-                m = Precursor_Features(precursor_seq).generate_features()
-                if m is None:
-                    continue
-
-                if strand == "+":
-                    pstart, pend = wstart + lo, wstart + hi
-                else:
-                    pstart, pend = wend - hi, wend - lo
-                star = self.find_star_sequence(precursor_seq, mature, bg)
-                starcount = 0
-                inconsistent = 0.0
-                if other is not None and star is not None:
-                    s = self.find_subseq(precursor_seq, star)
-                    if s >= 0:
-                        ss = pstart + s if strand == "+" else pend - s - len(star)
-                        sreads = other[
-                            (other.start >= ss - 2) & (other.end <= ss + len(star) + 3)
-                        ]
-                        starcount = sreads.reads.sum()
-                if other is not None:
-                    on_hairpin = other[(other.start >= pstart) & (other.end <= pend)].reads.sum()
-                    inconsistent = max(0, on_hairpin - starcount) / (maturecounts + on_hairpin)
-                putative_precursor.append(
-                    {
-                        "chrom": chrom,
-                        "mature": mature,
-                        "mature_length": seqlen,
-                        "precursor": precursor_seq,
-                        "precursor_length": len(precursor_seq),
-                        "start": pstart,
-                        "end": pend,
-                        "mature_start": start,
-                        "strand": strand,
-                        "struct": struct,
-                        "mfe": sc,
-                        "mature_check": "ok",
-                        "features": m,
-                        "mature_reads": maturecounts,
-                        "position": "5-prime" if centre < (i + j) / 2 else "3-prime",
-                        "star_reads": starcount,
-                        "inconsistent_fraction": inconsistent,
-                        "star": star,
-                        "randfold_pvalue": 1.0,
-                        "cluster": x.cluster,
-                    }
-                )
 
         if len(putative_precursor) == 0:
             return
@@ -732,28 +918,24 @@ class Novel_miRNA:
         Returns:
             str: The output path.
         """
-        mature_seq = []
-        with open(output, "w") as fp:
-            for _i, r in df.iterrows():
-                if seq == "mature":
-                    if type == "known":
-                        if r["Known_ID"] in mature_seq:
-                            continue
-                        else:
-                            fp.write(f">{r['Known_ID']}\n{r['mature']}\n")
-                            mature_seq.append(r["Known_ID"])
-                    else:
-                        fp.write(f">{r['Novel_ID']}\n{r['mature']}\n")
-                if seq == "hairpin":
-                    if type == "known":
-                        if r["Known_ID"] in mature_seq:
-                            continue
-                        else:
-                            fp.write(f">{r['Known_ID']}\n{r['precursor']}\n")
-                            mature_seq.append(r["Known_ID"])
-                    else:
-                        fp.write(f">{r['Novel_ID']}\n{r['precursor']}\n")
-        return output
+        records = []
+        seen = set()
+        for _i, r in df.iterrows():
+            if seq == "mature":
+                sequence = r["mature"]
+            elif seq == "hairpin":
+                sequence = r["precursor"]
+            else:
+                continue
+            if type == "known":
+                if r["Known_ID"] in seen:
+                    continue
+                seen.add(r["Known_ID"])
+                name = r["Known_ID"]
+            else:
+                name = r["Novel_ID"]
+            records.append((name, sequence))
+        return mu.write_fasta(records, output)
 
     def predict_known_miRNAs(self, novel_df):
         """

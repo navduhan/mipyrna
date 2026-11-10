@@ -191,6 +191,46 @@ def fasta_to_df(file):
 
     return seqdf
 
+
+def read_fasta(file, prefix=None):
+    """Read a FASTA file into ``(id, sequence)`` records.
+
+    Sequences are upper-cased and U is written as T, so DNA and RNA records can
+    be compared directly.
+
+    Args:
+        file (str): FASTA file.
+        prefix (str, optional): Keep only records whose ID starts with this prefix.
+
+    Returns:
+        list: ``(id, sequence)`` tuples in file order.
+    """
+
+    return [
+        (r.id, str(r.seq).upper().replace("U", "T"))
+        for r in SeqIO.parse(file, "fasta")
+        if prefix is None or r.id.startswith(prefix)
+    ]
+
+
+def write_fasta(records, output):
+    """Write named sequences to a FASTA file.
+
+    Args:
+        records (iterable): ``(name, sequence)`` pairs.
+        output (str): Output FASTA file.
+
+    Returns:
+        str: The output path.
+    """
+
+    with open(output, "w") as fp:
+        for name, sequence in records:
+            fp.write(f">{name}\n{sequence}\n")
+
+    return output
+
+
 def get_sequence(reference_fasta, coordinates):
         """Return the sequence for [chrom, start, end, strand] from a reference FASTA.
 
