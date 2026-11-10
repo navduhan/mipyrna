@@ -647,10 +647,28 @@ def _discovery(meta, params, base, known, novel):
                 BODY,
             ),
         ]
+    scan = meta.get("known_scan")
+    if scan:
+        out += [
+            Paragraph("Known miRNA scan", H2),
+            Paragraph(
+                "Known miRNAs were also detected directly from reads aligned to their precursors, independently of "
+                "clustering, folding and the discovery score cut-off. A mature is called when at least "
+                f"{scan.get('min_reads', '-')} reads start within {scan.get('five_prime_tolerance', '-')} nt of its "
+                "annotated 5-prime end. "
+                f"{scan.get('detected', 0):,} of {scan.get('resolved', 0):,} resolved known matures were called, "
+                f"{scan.get('added', 0):,} were not reported by discovery and {scan.get('both', 0):,} were found by both paths. "
+                "Structure and free energy were computed for these calls as for novel candidates.",
+                BODY,
+            ),
+        ]
     if known is not None and len(known):
         out += [Paragraph("Known miRNAs (top 10 by score)", H2)]
         top = known.sort_values("score", ascending=False) if "score" in known.columns else known
-        out.append(_table(_frame(top, ["Novel_ID", "Known_ID", "Database", "chrom", "strand", "mature_reads", "star_reads", "score"]), None))
+        columns = ["Novel_ID", "Known_ID", "Database", "Detection", "chrom", "strand", "mature_reads", "star_reads", "score"]
+        if "alignment_reads" in known.columns:
+            columns.insert(-1, "alignment_reads")
+        out.append(_table(_frame(top, columns), None))
     if novel is not None and len(novel): 
         out += [Paragraph("Novel miRNAs (top 10 by score)", H2)]
         top = novel.sort_values("score", ascending=False) if "score" in novel.columns else novel

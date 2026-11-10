@@ -140,6 +140,10 @@ def build_parser(defaults=None):
     wf.add_argument("--min-star-reads", type=int, default=1, help="Star reads needed with --require-star (default: 1)")
     wf.add_argument("--max-inconsistent", type=float, default=0.1, help="Maximum fraction of hairpin reads outside the mature and star positions (default: 0.1)")
     wf.add_argument("--min-novel-score", type=float, default=1.0, help="Minimum heuristic score of a novel miRNA (default: 1.0)")
+    wf.add_argument("--known-scan", action="store_true", help="Detect known miRNAs from reads aligned to known precursors and merge them into the known table")
+    wf.add_argument("--known-min-reads", type=int, default=10, help="Minimum reads on a known precursor arm to call it detected (default: 10)")
+    wf.add_argument("--known-5p-tolerance", type=int, default=2, help="Allowed offset of a read 5' end from the annotated known mature start (default: 2)")
+    wf.add_argument("--known-unique", action="store_true", help="Count a read for the known scan only when it maps to one precursor")
     wf.add_argument("--slurm", action="store_true", help="Submit the run as a Slurm job; samples are scored as a job array")
     wf.add_argument("--partition", help="Slurm partition")
     wf.add_argument("--account", help="Slurm account")
@@ -275,6 +279,10 @@ def main(argv=None):
             weighted=args.weighted,
             max_inconsistent=args.max_inconsistent,
             min_novel_score=args.min_novel_score,
+            known_scan=args.known_scan,
+            known_min_reads=args.known_min_reads,
+            known_5p_tolerance=args.known_5p_tolerance,
+            known_unique=args.known_unique,
             slurm=args.slurm,
             trimmer=args.trimmer,
             dryrun=args.dryrun,

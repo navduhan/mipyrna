@@ -11,6 +11,10 @@ trimmer = trimmomatic
 skip_qc = true
 read_cutoff = 50
 min_mature_reads = 10
+known_scan = false
+known_min_reads = 10
+known_5p_tolerance = 2
+known_unique = false
 
 [slurm]
 partition = compute

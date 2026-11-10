@@ -43,6 +43,12 @@ from mipyrna.annotation import run_enrichment
 from mipyrna.check import provenance
 from mipyrna.clustering import Cluster_reads
 from mipyrna.differential import runDESeq2
+from mipyrna.known_scan import (
+    KnownScan,
+    drop_detected_novel,
+    merge_known_calls,
+    read_sources,
+)
 from mipyrna.logger import MiPyRNALogger, set_log_file
 from mipyrna.novel import Novel_miRNA
 from mipyrna.quality import fastqcRun
@@ -146,6 +152,10 @@ def run_workflow(
     weighted=False,
     max_inconsistent=0.1,
     min_novel_score=1.0,
+    known_scan=False,
+    known_min_reads=10,
+    known_5p_tolerance=2,
+    known_unique=False,
     slurm=False,
     dryrun=False,
     resume=False
@@ -177,6 +187,13 @@ def run_workflow(
         weighted (bool): Share each read across the miRNAs it maps to when counting. Defaults to False.
         max_inconsistent (float): Maximum fraction of the reads on a novel hairpin outside the mature and star positions. Defaults to 0.1.
         min_novel_score (float): Minimum heuristic score of a novel miRNA. Defaults to 1.0.
+        known_scan (bool): Detect known miRNAs from reads aligned to known precursors and merge
+            them into the known table. Defaults to False.
+        known_min_reads (int): Minimum reads on a known precursor arm. Defaults to 10.
+        known_5p_tolerance (int): Allowed offset of a read 5' end from the annotated known mature
+            start. Defaults to 2.
+        known_unique (bool): Count a read for the known scan only when it maps to one precursor.
+            Defaults to False.
         slurm (bool): Run each sample of the heavy steps as an element of a Slurm job array with ``cpu // jobs`` cores.
             Trimming, FastQC and the alignments are submitted as arrays too; collapsing and clustering run in
             this process, which should itself be a Slurm job. Defaults to False.
@@ -326,8 +343,62 @@ def run_workflow(
         require_star=novel.require_star,
         min_star_reads=novel.min_star_reads,
         random_seed=novel.random_seed,
+        known_scan=known_scan,
+        known_min_reads=known_min_reads,
+        known_5p_tolerance=known_5p_tolerance,
+        known_unique=known_unique,
     )
     known_df, novel_df, known_fasta, novel_fasta = novel.get_novel_miRNA()
+    if known_scan:
+        try:
+            blast_dir = os.path.join(mirna_dir, "blast_results")
+            reference = os.path.join(blast_dir, f"{species}_known_mature.fa")
+            hairpins = os.path.join(blast_dir, f"{species}_hairpin.fa")
+            if not os.path.exists(reference):
+                log.warning("Known scan skipped: the known mature reference is missing")
+            else:
+                scan_dir = mu.make_directory(os.path.join(mirna_dir, "known_scan"))
+                metadata["stage_dirs"]["known_scan"] = scan_dir
+                scan = KnownScan(
+                    matures=mu.read_fasta(reference),
+                    samples=collapsed,
+                    genome=genome,
+                    index_dir=align_dir,
+                    hairpin_fasta=hairpins,
+                    outdir=scan_dir,
+                    sources=read_sources(os.path.join(blast_dir, "known_reference_sources.tsv")),
+                    min_reads=known_min_reads,
+                    tolerance=known_5p_tolerance,
+                    unique=known_unique,
+                    cpu=score_threads,
+                    mem=mem,
+                    jobs=score_jobs,
+                    species_type=species_type,
+                )
+                scan_df = scan.scan()
+                metadata["known_scan"] = {
+                    "file": os.path.join(scan_dir, "known_scan.tsv"),
+                    "min_reads": known_min_reads,
+                    "five_prime_tolerance": known_5p_tolerance,
+                    "unique": known_unique,
+                    "resolved": int(len(scan_df)),
+                    "detected": sum(scan_df["detected"].astype(bool).tolist()) if len(scan_df) else 0,
+                }
+                if isinstance(known_df, pd.DataFrame):
+                    merged, added, both, siblings = merge_known_calls(known_df, scan_df, species)
+                    known_df = merged
+                    novel_df, moved = drop_detected_novel(novel_df, scan_df)
+                    metadata["known_scan"].update(
+                        added=added, both=both, siblings=siblings, novel_moved=moved
+                    )
+                    log.info(
+                        f"Known scan merged: {added} new rows, {both} found by both paths, "
+                        f"{siblings} sibling names, {moved} novel candidates moved to known"
+                    )
+                    if known_fasta:
+                        novel._write_fasta(df=known_df, output=known_fasta, type="known")
+        except Exception as exc:
+            log.warning(f"Known scan skipped due to error: {exc}")
     db_summary = os.path.join(mirna_dir, "known_database_summary.tsv")
     if os.path.exists(db_summary):
         metadata["database_summary"] = db_summary
@@ -350,9 +421,7 @@ def run_workflow(
     if isinstance(novel_df, pd.DataFrame):
         mirnas += list(zip(novel_df["Novel_ID"], novel_df["precursor"], novel_df["mature"]))
     quant_ref = os.path.join(quant_dir, "miRNA_mature.fa")
-    with open(quant_ref, "w") as fh:
-        for name, _hairpin, mature in mirnas:
-            fh.write(f">{name}\n{mature}\n")
+    mu.write_fasta(((name, mature) for name, _hairpin, mature in mirnas), quant_ref)
     quant = Quantifier(miRNAs=mirnas, samples=collapsed, outdir=quant_dir, slurm=False, weighted=weighted)
     counts = quant.quantify_expression(cpu=cpu, mem=mem)
     counts_file = os.path.join(quant_dir, "Raw_read_counts.tsv")
