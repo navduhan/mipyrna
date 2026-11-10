@@ -211,6 +211,7 @@ class KnownScan:
         mem=20,
         jobs=1,
         species_type="plants",
+        rfam=None,
     ):
         """Initialize the scan.
 
@@ -229,6 +230,8 @@ class KnownScan:
             mem (int): Memory in GB for alignment. Defaults to 20.
             jobs (int): Samples aligned at once. Defaults to 1.
             species_type (str): ``'plants'`` or ``'animals'``. Defaults to ``'plants'``.
+            rfam (dict, optional): Sample name to a dictionary of read name to the set of
+                Rfam sequences the read matched. Defaults to None.
         """
 
         self.matures = list(matures or [])
@@ -245,6 +248,7 @@ class KnownScan:
         self.mem = mem
         self.jobs = jobs
         self.species_type = species_type
+        self.rfam = rfam or {}
         self.reference = os.path.join(outdir, "known_hairpins.fa")
 
     def _genome_hits(self, records, name):
@@ -287,6 +291,8 @@ class KnownScan:
         hits = defaultdict(list)
         for row in aligned["query"][2].itertuples():
             hits[row.read_name].append((row.name, int(row.start), int(row.end), row.strand))
+        for loci in hits.values():
+            loci.sort()
         return hits
 
     def _database_precursors(self, matures):
@@ -451,6 +457,8 @@ class KnownScan:
         peak = defaultdict(lambda: defaultdict(float))
         unique = defaultdict(lambda: defaultdict(float))
         star = defaultdict(lambda: defaultdict(float))
+        rfam_copies = defaultdict(lambda: defaultdict(float))
+        rfam_ids = defaultdict(set)
         starts = defaultdict(Counter)
         lengths = defaultdict(Counter)
 
@@ -476,13 +484,17 @@ class KnownScan:
                     if abs(start - sposition) <= self.tolerance and end <= sposition + slength + THREE_PRIME_SLACK:
                         star[sample][mid] += copies
 
-            for mids in per_read.values():
+            for read_name, mids in per_read.items():
+                hit = self.rfam.get(sample, {}).get(read_name)
                 for mid, (offset, length, copies) in mids.items():
                     peak[sample][mid] += copies
                     starts[mid][offset] += copies
                     lengths[mid][length] += copies
                     if len(mids) == 1:
                         unique[sample][mid] += copies
+                    if hit:
+                        rfam_copies[sample][mid] += copies
+                        rfam_ids[mid].update(hit)
 
         rows = []
         samples = list(aligned)
@@ -493,9 +505,18 @@ class KnownScan:
             total = sum(row_counts.values())
             total_unique = sum(row_unique.values())
             observed = starts.get(mid, Counter())
-            modal, modal_count = (observed.most_common(1)[0] if observed else (0, 0))
+            if observed:
+                modal, modal_count = min(
+                    observed.items(), key=lambda item: (-item[1], abs(item[0]), item[0])
+                )
+            else:
+                modal, modal_count = 0, 0
             consistency = modal_count / total if total else 0.0
-            length_mode = lengths[mid].most_common(1)[0][0] if lengths.get(mid) else 0
+            length_mode = (
+                min(lengths[mid].items(), key=lambda item: (-item[1], item[0]))[0]
+                if lengths.get(mid)
+                else 0
+            )
             basis = total_unique if self.unique else total
             detected = (
                 basis >= self.min_reads
@@ -525,6 +546,8 @@ class KnownScan:
                 "unique_reads": total_unique,
                 "max_reads": max(row_counts.values()) if row_counts else 0.0,
                 "star_reads": sum(star[sample].get(mid, 0.0) for sample in samples),
+                "rfam_reads": sum(rfam_copies[sample].get(mid, 0.0) for sample in samples),
+                "Rfam": ",".join(sorted(rfam_ids.get(mid, ()))) or "-",
                 "modal_5p_offset": modal,
                 "five_prime_consistency": consistency,
                 "length_mode": length_mode,
@@ -546,6 +569,9 @@ class KnownScan:
         table = self.resolve()
         if len(table) == 0:
             log.warning("Known scan: no precursor could be resolved")
+            table["rfam_reads"] = pd.Series(dtype=float)
+            table["Rfam"] = pd.Series(dtype=str)
+            table.to_csv(os.path.join(self.outdir, "known_scan.tsv"), sep="\t", index=False)
             return table
 
         aligned = self._align(table)
@@ -682,6 +708,8 @@ def merge_known_calls(known_df, scan_df, species):
                 "star": call.star,
                 "randfold_pvalue": float("nan"),
                 "cluster": float("nan"),
+                "rfam_reads": float(getattr(call, "rfam_reads", 0.0)),
+                "Rfam": str(getattr(call, "Rfam", "-")),
                 "score": call.score,
                 "ml_score": call.ml_score,
                 "heuristic_score": float("nan"),

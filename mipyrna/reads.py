@@ -226,7 +226,7 @@ class Read_process:
         seq_start = 'start' if aligned_cluster.iloc[0].strand == '+' else 'end'
         # group = aligned_cluster.groupby([seq_start, 'length']).agg({'reads':np.sum}).sort_values(by='reads', ascending=False).reset_index()
         group = aligned_cluster.groupby([seq_start, 'length'])['reads'].agg('sum').sort_values(ascending=False).reset_index()
-        consensus = aligned_cluster[(aligned_cluster[seq_start]==group.iloc[0][seq_start]) &(aligned_cluster.length == group.iloc[0].length)].sort_values(by='reads', ascending=False)
+        consensus = aligned_cluster[(aligned_cluster[seq_start]==group.iloc[0][seq_start]) &(aligned_cluster.length == group.iloc[0].length)].sort_values(by='reads', ascending=False, kind="mergesort")
 
         for _k, v in consensus.iterrows():
 
@@ -262,5 +262,4 @@ class Read_process:
             seq = str(Seq.Seq(seq).reverse_complement())
 
         return seq
-
 

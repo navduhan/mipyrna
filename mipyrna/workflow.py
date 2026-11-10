@@ -55,6 +55,7 @@ from mipyrna.quality import fastqcRun
 from mipyrna.quantifier import Quantifier
 from mipyrna.reads import Read_process
 from mipyrna.report import generate_report
+from mipyrna.rfamily import FilterRNAfamlies
 from mipyrna.targets import run_targets
 from mipyrna.trimming import flexbarRun, trim_galoreRun, trimmomaticRun
 
@@ -127,6 +128,33 @@ def _write_collapsed_fasta(samples, outdir, jobs=4):
     return collapsed
 
 
+def _check_read_policy(output, resume, rfam_filter):
+    """Reject cached alignments or scores from a different read-processing policy.
+
+    QC and collapsed reads remain reusable. Older discovery caches predate both
+    deterministic cluster ordering and the Rfam annotations, so they need a new run.
+    """
+    policy = {"revision": "ordered-rfam-v1", "rfam_filter": rfam_filter}
+    path = os.path.join(output, ".resume", "read_policy.json")
+    temp = os.path.join(output, "3.miRNA_Discovery", "temp")
+    cached = os.path.exists(os.path.join(output, ".resume", "align.json")) or (
+        os.path.isdir(temp) and any(name.endswith("_scored.pkl") for name in os.listdir(temp))
+    )
+    if resume and cached:
+        previous = None
+        if os.path.exists(path):
+            with open(path) as handle:
+                previous = json.load(handle)
+        if previous != policy:
+            raise ValueError(
+                "Cannot resume alignments or scored candidates from a different Rfam/filter "
+                "or clustering policy. Use a new --outdir for this run."
+            )
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as handle:
+        json.dump(policy, handle)
+
+
 def run_workflow(
     input_file,
     input_path,
@@ -156,6 +184,7 @@ def run_workflow(
     known_min_reads=10,
     known_5p_tolerance=2,
     known_unique=False,
+    rfam_filter=False,
     slurm=False,
     dryrun=False,
     resume=False
@@ -194,6 +223,8 @@ def run_workflow(
             start. Defaults to 2.
         known_unique (bool): Count a read for the known scan only when it maps to one precursor.
             Defaults to False.
+        rfam_filter (bool): Remove reads that align to the bundled Rfam ncRNA set before genome
+            alignment and clustering. The Rfam match is always reported. Defaults to False.
         slurm (bool): Run each sample of the heavy steps as an element of a Slurm job array with ``cpu // jobs`` cores.
             Trimming, FastQC and the alignments are submitted as arrays too; collapsing and clustering run in
             this process, which should itself be a Slurm job. Defaults to False.
@@ -211,6 +242,7 @@ def run_workflow(
     mu.set_resume(resume)
     output = mu.make_directory(outdir, dryrun=dryrun)
     if not dryrun:
+        _check_read_policy(output, resume, rfam_filter)
         set_log_file(os.path.join(output, "mipyrna.log"))
     parsed = mu.read_input_file(infile=input_file, inpath=input_path, paired=paired)
     samples = parsed["samples"]
@@ -229,6 +261,7 @@ def run_workflow(
             "paired": paired,
             "trimmer": trimmer if run_trim else None,
             "adapter": adapter,
+            "rfam_filter": rfam_filter,
         },
         "stage_dirs": {},
         **provenance(species_type),
@@ -292,12 +325,56 @@ def run_workflow(
             collapsed = _write_collapsed_fasta(working_samples, collapse_dir, jobs)
             _save_stage(output, "collapse", collapsed)
 
+    log.info("Aligning reads to the Rfam ncRNA set")
+    rfam_hits = {}
+    rfam_samples = collapsed
+    if dryrun:
+        log.info("[dryrun] Next: align reads to the bundled Rfam ncRNA set")
+    else:
+        rfam_dir = mu.make_directory(os.path.join(align_dir, "rfam"))
+        metadata["stage_dirs"]["rfam"] = rfam_dir
+        rfam = FilterRNAfamlies(samples=collapsed, outdir=rfam_dir)
+        ncRNA_reads, rfam_filtered = rfam.align_rfam(
+            cpu=threads, mem=mem, jobs=jobs, filter_reads=rfam_filter
+        )
+        rfam_counts = {}
+        for sample, entry in ncRNA_reads.items():
+            frame = entry[2]
+            if len(frame):
+                grouped = frame.groupby("read_name")["name"].agg(lambda values: set(values))
+                rfam_hits[sample] = grouped.to_dict()
+                flagged = float(frame.drop_duplicates("read_name")["reads"].sum())
+                flagged_unique = int(frame["read_name"].nunique())
+            else:
+                rfam_hits[sample] = {}
+                flagged = 0.0
+                flagged_unique = 0
+            rfam_counts[sample] = {
+                "flagged_reads": flagged,
+                "flagged_unique": flagged_unique,
+                "removed_reads": flagged if rfam_filter else 0.0,
+                "removed_unique": flagged_unique if rfam_filter else 0,
+            }
+        metadata["rfam"] = {
+            "filter": rfam_filter,
+            "reference": os.path.join(rfam_dir, "ncRNA_results", "ncRNA_rfam.fa"),
+            "match_rule": "exact, both strands, one representative hit per read; no multi-hit suppression",
+            "labels": "sequence accessions (family names unavailable in the bundled FASTA)",
+            "samples": rfam_counts,
+        }
+        if rfam_filter:
+            rfam_samples = rfam_filtered
+        log.info(
+            f"Rfam: {sum(v['flagged_unique'] for v in rfam_counts.values())} unique reads "
+            f"matched; filtering {'on' if rfam_filter else 'off'}"
+        )
+
     log.info("Aligning reads to the genome")
     aligned_files = None if dryrun else _load_stage(resume, output, "align")
     if aligned_files is None:
         aln = Bowtie_Aligner(ref_genome=genome, outdir=align_dir, slurm=False, dryrun=dryrun)
         aln.build_index(cpu=cpu, mem=mem)
-        aligned_files = aln.run_alignment(samplesDict=collapsed, fileType='fasta', outType='SAM', cpu=threads, mem=mem, jobs=jobs)
+        aligned_files = aln.run_alignment(samplesDict=rfam_samples, fileType='fasta', outType='SAM', cpu=threads, mem=mem, jobs=jobs)
         if not dryrun:
             _save_stage(output, "align", aligned_files)
     if dryrun:
@@ -330,6 +407,7 @@ def run_workflow(
         resume=resume,
         slurm=slurm and not dryrun,
         mem=mem,
+        rfam=rfam_hits,
     )
     metadata["parameters"].update(
         filter_criteria=novel.filterCriteria,
@@ -361,7 +439,7 @@ def run_workflow(
                 metadata["stage_dirs"]["known_scan"] = scan_dir
                 scan = KnownScan(
                     matures=mu.read_fasta(reference),
-                    samples=collapsed,
+                    samples=rfam_samples,
                     genome=genome,
                     index_dir=align_dir,
                     hairpin_fasta=hairpins,
@@ -374,6 +452,7 @@ def run_workflow(
                     mem=mem,
                     jobs=score_jobs,
                     species_type=species_type,
+                    rfam=rfam_hits,
                 )
                 scan_df = scan.scan()
                 metadata["known_scan"] = {
@@ -405,10 +484,12 @@ def run_workflow(
     if isinstance(known_df, pd.DataFrame):
         known_txt = os.path.join(mirna_dir, "known_miRNAs.tsv")
         known_df.to_csv(known_txt, sep="\t", index=False)
+        known_df.to_excel(os.path.join(mirna_dir, "known_miRNAs.xlsx"), index=False)
         metadata["known_file"] = known_txt
     if isinstance(novel_df, pd.DataFrame):
         novel_txt = os.path.join(mirna_dir, "novel_miRNAs.tsv")
         novel_df.to_csv(novel_txt, sep="\t", index=False)
+        novel_df.to_excel(os.path.join(mirna_dir, "novel_miRNAs.xlsx"), index=False)
         metadata["novel_file"] = novel_txt
 
     log.info("Quantifying miRNAs")
@@ -422,7 +503,7 @@ def run_workflow(
         mirnas += list(zip(novel_df["Novel_ID"], novel_df["precursor"], novel_df["mature"]))
     quant_ref = os.path.join(quant_dir, "miRNA_mature.fa")
     mu.write_fasta(((name, mature) for name, _hairpin, mature in mirnas), quant_ref)
-    quant = Quantifier(miRNAs=mirnas, samples=collapsed, outdir=quant_dir, slurm=False, weighted=weighted)
+    quant = Quantifier(miRNAs=mirnas, samples=rfam_samples, outdir=quant_dir, slurm=False, weighted=weighted)
     counts = quant.quantify_expression(cpu=cpu, mem=mem)
     counts_file = os.path.join(quant_dir, "Raw_read_counts.tsv")
     counts.to_csv(counts_file, sep="\t", index=False)

@@ -174,6 +174,34 @@ mipyrna enrich --targets-file results/6.Target_Prediction/targets_raw/miranda_ta
 mipyrna report --outdir results
 ```
 
+### Rfam alerts and optional filtering
+
+The workflow always screens collapsed reads against the bundled Rfam ncRNA
+sequences with exact Bowtie matches on either strand. Reads with many matching
+reference sequences are not suppressed; one representative match is retained
+per read. Without `--rfam-filter`, all reads remain available to discovery,
+the known scan and quantification. With the flag, matching reads are removed
+before all three steps. `rfam_filter = false` is the default INI setting.
+
+`known_miRNAs.tsv`, `novel_miRNAs.tsv` (and their Excel copies) and
+`known_scan.tsv` carry two alert columns:
+
+- `rfam_reads`: supporting read copies that also matched Rfam, counted once
+  per collapsed read. Discovery rows describe the sample supporting that row;
+  alignment-only rows and the scan table sum support over samples.
+- `Rfam`: sorted representative sequence accessions, or `-` for no match.
+  The bundled FASTA lacks Rfam family labels, so these are **not family names**
+  or an exhaustive list of matching Rfam entries.
+
+Filtered runs normally have zero Rfam support in their call tables because
+matching reads have already been removed. The PDF and workflow metadata retain
+the per-sample flagged/removed totals, including unique collapsed-read counts.
+An alert is not proof that a miRNA call is false, particularly for short reads.
+
+Reads are canonically ordered before clustering to remove SAM-record-order
+effects. Resume rejects older alignment/discovery caches, or caches generated
+with a different `rfam_filter` setting; use a new output directory for those runs.
+
 Benchmarking Against miRDeep2
 -----------------------------
 

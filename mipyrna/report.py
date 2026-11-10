@@ -662,6 +662,26 @@ def _discovery(meta, params, base, known, novel):
                 BODY,
             ),
         ]
+    rfam = meta.get("rfam")
+    if rfam:
+        counts = rfam.get("samples", {})
+        flagged = sum(v.get("flagged_reads", 0) for v in counts.values())
+        unique = sum(v.get("flagged_unique", 0) for v in counts.values())
+        action = (
+            "removed before genome alignment and clustering"
+            if rfam.get("filter")
+            else "kept and flagged in the call tables"
+        )
+        out += [
+            Paragraph("Rfam ncRNA alert", H2),
+            Paragraph(
+                "Reads were also aligned to the bundled Rfam non-coding RNA set. "
+                f"{flagged:,} reads ({unique:,} unique) matched and were {action}. "
+                "Each call reports the number of its supporting reads that matched Rfam in "
+                "rfam_reads and the Rfam sequence identifiers in Rfam.",
+                BODY,
+            ),
+        ]
     if known is not None and len(known):
         out += [Paragraph("Known miRNAs (top 10 by score)", H2)]
         top = known.sort_values("score", ascending=False) if "score" in known.columns else known

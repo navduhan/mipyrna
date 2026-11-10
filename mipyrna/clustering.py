@@ -65,18 +65,24 @@ class Cluster_reads:
             tuple: ``(key, [group, replicate, reads DataFrame, clusters DataFrame])``.
         """
         filtered_reads = sample[2][(sample[2].length<=self.max) & (sample[2].length>=self.min)]
-        input_file =filtered_reads.copy()
+        # Canonical ids also keep ClusterTree's returned member order independent
+        # of the SAM line numbers assigned by the alignment parser.
+        input_file = filtered_reads.sort_values(
+            ["name", "start", "end", "strand", "read_name"], kind="mergesort"
+        ).copy()
+        input_file = input_file.reset_index(drop=True)
         if self.key in input_file.columns:
-            input_file.set_index(self.key, inplace=True)
+            input_file[self.key] = range(1, len(input_file) + 1)
+            input_file = input_file.set_index(self.key)
 
         cluster_trees = collections.defaultdict(lambda:
             ClusterTree(self.cluster_distance, self.min_size))
         for chrom, start, end, name in zip(input_file['name'], input_file.start, input_file.end, input_file.index, strict=True):
             cluster_trees[chrom].insert(start, end, name)
-        clustertrees = dict(cluster_trees)
         cgroups = []
         icount = 1
-        for cltree in clustertrees.values():
+        for chrom in sorted(cluster_trees):
+            cltree = cluster_trees[chrom]
         
             for start, end, ids in cltree.getregions():
                 c = input_file.loc[ids].copy()
@@ -86,7 +92,12 @@ class Cluster_reads:
                 c = c[c.groupby('strand')['strand'].transform('size') > 1]
                 cgroups.append(c)
                 icount +=1
-        df = pd.concat(cgroups) if len(cgroups) > 0 else pd.DataFrame()
+        if cgroups:
+            df = pd.concat(cgroups)
+        else:
+            df = input_file.iloc[:0].copy()
+            for column in ("cl_start", "cl_end", "cluster"):
+                df[column] = pd.Series(index=df.index, dtype=int)
 
         clusts = df.groupby(['name','cluster','cl_start','cl_end','strand'])\
                     .agg({'reads':'sum','length':'max'})\

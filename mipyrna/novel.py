@@ -484,6 +484,7 @@ class Novel_miRNA:
         resume=False,
         slurm=False,
         mem=None,
+        rfam=None,
     ):
         """
         Initialize the novel miRNA predictor.
@@ -512,6 +513,8 @@ class Novel_miRNA:
             resume (bool): Reuse the scored candidates saved for a sample by an earlier run. Defaults to False.
             slurm (bool): Score each sample as an element of a Slurm job array, each with ``workers`` cores. Defaults to False.
             mem (int, optional): Memory in GB of each Slurm job. Defaults to the cluster setting.
+            rfam (dict, optional): Sample name to a dictionary of read name to the set of Rfam
+                sequences the read matched. Defaults to None.
         """
 
         self.genome = genome
@@ -537,6 +540,7 @@ class Novel_miRNA:
         self.resume = resume
         self.slurm = slurm
         self.mem = mem
+        self.rfam = rfam or {}
         self.rng = np.random.default_rng(random_seed)
 
     def get_precursor_structure(self, seq):
@@ -695,7 +699,7 @@ class Novel_miRNA:
 
         return pd.DataFrame({"miRNA": prob, "Non-miRNA": 1.0 - prob})
 
-    def get_putative_precursor(self, filtered_cluster=None, other=None):
+    def get_putative_precursor(self, filtered_cluster=None, other=None, rfam=None):
         """
         Extract and score the candidate hairpins of one read cluster.
 
@@ -707,6 +711,8 @@ class Novel_miRNA:
         Args:
             filtered_cluster (pandas.DataFrame): Reads of the mature cluster.
             other (pandas.DataFrame, optional): Remaining cluster reads used to count star reads.
+            rfam (dict, optional): Read name to the set of Rfam sequences the read matched.
+                Defaults to None.
 
         Returns:
             pandas.DataFrame or None: Candidate hairpins, or None if no valid candidate was found.
@@ -729,6 +735,15 @@ class Novel_miRNA:
             mature = x.seq
         seqlen = len(mature)
         maturecounts = filtered_cluster.reads.sum()
+        rfam = rfam or {}
+        if rfam:
+            hits = filtered_cluster[filtered_cluster["read_name"].isin(rfam)].drop_duplicates("read_name")
+            rfam_reads = float(hits["reads"].sum())
+            accessions = sorted({name for read in hits["read_name"] for name in rfam.get(read, ())})
+        else:
+            rfam_reads = 0.0
+            accessions = []
+        rfam_label = ",".join(accessions) if accessions else "-"
         putative_precursor = []
 
         for entry in fold_hairpins(
@@ -778,6 +793,8 @@ class Novel_miRNA:
                     "star": star,
                     "randfold_pvalue": 1.0,
                     "cluster": x.cluster,
+                    "rfam_reads": rfam_reads,
+                    "Rfam": rfam_label,
                 }
             )
 
@@ -1104,17 +1121,18 @@ class Novel_miRNA:
         Extract and score the candidate precursors of one read cluster.
 
         Args:
-            task (tuple): (cluster ID, cluster size, cluster reads DataFrame).
+            task (tuple): (cluster ID, cluster size, cluster reads DataFrame, sample name).
 
         Returns:
             pandas.DataFrame or None: Candidate precursors, or None if the cluster has too few reads.
         """
-        cluster_id, clust_size, df = task
+        cluster_id, clust_size, df, name = task
         self.rng = np.random.default_rng([self.random_seed, int(cluster_id)])
-        df = df.sort_values("reads", ascending=False)
+        rfam = self.rfam.get(name, {})
+        df = df.sort_values("reads", ascending=False, kind="mergesort")
         if clust_size < self.clusterCutoff:
             df["mature"] = True
-            return self.get_putative_precursor(filtered_cluster=df)
+            return self.get_putative_precursor(filtered_cluster=df, rfam=rfam)
         anchor = df.iloc[0]
         mm = df.loc[
             (abs(df.start - anchor.start) <= 3) & (abs(df.end - anchor.end) <= 5)
@@ -1124,7 +1142,7 @@ class Novel_miRNA:
         mm["mature"] = True
         other = df.loc[~df.index.isin(mm.index)].copy()
         other["mature"] = False
-        return self.get_putative_precursor(filtered_cluster=mm, other=other)
+        return self.get_putative_precursor(filtered_cluster=mm, other=other, rfam=rfam)
 
     def _score_sample(self, sample):
         """
@@ -1139,7 +1157,7 @@ class Novel_miRNA:
         clusts = sample[3][sample[3].reads >= self.readsCutoff]
         groups = dict(tuple(sample[2].groupby("cluster")))
         tasks = [
-            (c.cluster, c.clust_size, groups[c.cluster])
+            (c.cluster, c.clust_size, groups[c.cluster], sample[0])
             for _i, c in clusts.iterrows()
             if c.cluster in groups
         ]
@@ -1215,7 +1233,7 @@ class Novel_miRNA:
         Progress is logged about every 5% of the clusters.
 
         Args:
-            tasks (list): Cluster tasks of (cluster ID, cluster size, reads DataFrame).
+            tasks (list): Cluster tasks of (cluster ID, cluster size, reads DataFrame, sample name).
             name (str): Sample name used in the progress messages. Defaults to "Clusters".
 
         Returns:

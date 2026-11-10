@@ -206,11 +206,12 @@ def read_fasta(file, prefix=None):
         list: ``(id, sequence)`` tuples in file order.
     """
 
-    return [
-        (r.id, str(r.seq).upper().replace("U", "T"))
-        for r in SeqIO.parse(file, "fasta")
-        if prefix is None or r.id.startswith(prefix)
-    ]
+    with open(file) as handle:
+        return [
+            (r.id, str(r.seq).upper().replace("U", "T"))
+            for r in SeqIO.parse(handle, "fasta")
+            if prefix is None or r.id.startswith(prefix)
+        ]
 
 
 def write_fasta(records, output):

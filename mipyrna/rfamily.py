@@ -1,7 +1,7 @@
 """Rfam Filtering Module
 
-This module removes reads from known non-coding RNA families by aligning them
-to the bundled Rfam sequences.
+This module screens reads against bundled Rfam ncRNA sequences and can write
+the reads that did not match for optional filtering.
 
 Features:
     - Extraction of the bundled Rfam ncRNA FASTA at runtime
@@ -24,6 +24,7 @@ Classes / Functions / Exceptions:
 
 import importlib.resources as ir
 import os
+import shutil
 import tarfile
 
 from mipyrna import utility as mu
@@ -43,7 +44,7 @@ class FilterRNAfamlies:
             slurm (bool): Use SLURM for alignment. Defaults to False.
         """
         
-        self.samples = samples
+        self.samples = samples or {}
         
         self.slurm = slurm
         
@@ -77,12 +78,15 @@ class FilterRNAfamlies:
             
         return outfiltered
     
-    def align_rfam(self, cpu=8,mem=20):
-        """Align reads to the bundled Rfam sequences and filter the matches.
+    def align_rfam(self, cpu=8, mem=20, jobs=1, filter_reads=True):
+        """Align reads to bundled Rfam sequences and optionally filter the matches.
 
         Args:
             cpu (int): Threads for alignment. Defaults to 8.
             mem (int): Memory for alignment. Defaults to 20.
+            jobs (int): Samples aligned at once. Defaults to 1.
+            filter_reads (bool): Write unmatched FASTA files. Otherwise return the
+                original samples unchanged. Defaults to True for existing callers.
 
         Returns:
             tuple: ``(ncRNA_reads, filtered_samples)``: the parsed Rfam alignments
@@ -93,19 +97,27 @@ class FilterRNAfamlies:
 
         if not os.path.exists(ncRNA_file):
             with tarfile.open(str(ir.files("mipyrna").joinpath("data/ncRNA_rfam.tar.gz")), "r:gz") as tar:
-                tar.extract("ncRNA_rfam.fa", self.outdir)
+                source = tar.extractfile("ncRNA_rfam.fa")
+                if source is None:
+                    raise ValueError("The bundled Rfam archive has no ncRNA FASTA")
+                with source, open(ncRNA_file, "wb") as target:
+                    shutil.copyfileobj(source, target)
         
-        aln = Bowtie_Aligner(ref_genome=ncRNA_file, outdir=self.outdir, slurm=self.slurm)
+        config = str(ir.files("mipyrna").joinpath("param/bowtie_rfam.ini"))
+        aln = Bowtie_Aligner(
+            ref_genome=ncRNA_file, configFile=config, outdir=self.outdir, slurm=self.slurm
+        )
         
-        aln.build_index(cpu=cpu)
+        aln.build_index(cpu=cpu, mem=mem)
         
-        results = aln.run_alignment(samplesDict=self.samples, cpu=cpu,mem=mem)
+        results = aln.run_alignment(
+            samplesDict=self.samples, fileType="fasta", outType="SAM", cpu=cpu, mem=mem, jobs=jobs
+        )
         
-        ncRNA_reads = Read_process().aligned_reads(samples=results, alignType='SAM')
+        ncRNA_reads = Read_process().aligned_reads(samples=results, alignType='SAM', jobs=jobs)
         
-        return  ncRNA_reads, self._extract_rfam_unmapped(samples=self.samples, rfam_samples=ncRNA_reads)
-    
-    
-            
-            
-                
+        remaining = (
+            self._extract_rfam_unmapped(samples=self.samples, rfam_samples=ncRNA_reads)
+            if filter_reads else self.samples
+        )
+        return ncRNA_reads, remaining

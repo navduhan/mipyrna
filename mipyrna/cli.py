@@ -144,6 +144,7 @@ def build_parser(defaults=None):
     wf.add_argument("--known-min-reads", type=int, default=10, help="Minimum reads on a known precursor arm to call it detected (default: 10)")
     wf.add_argument("--known-5p-tolerance", type=int, default=2, help="Allowed offset of a read 5' end from the annotated known mature start (default: 2)")
     wf.add_argument("--known-unique", action="store_true", help="Count a read for the known scan only when it maps to one precursor")
+    wf.add_argument("--rfam-filter", action="store_true", help="Remove reads that align to the bundled Rfam ncRNA set before genome alignment and clustering (the Rfam match is always reported)")
     wf.add_argument("--slurm", action="store_true", help="Submit the run as a Slurm job; samples are scored as a job array")
     wf.add_argument("--partition", help="Slurm partition")
     wf.add_argument("--account", help="Slurm account")
@@ -283,6 +284,7 @@ def main(argv=None):
             known_min_reads=args.known_min_reads,
             known_5p_tolerance=args.known_5p_tolerance,
             known_unique=args.known_unique,
+            rfam_filter=args.rfam_filter,
             slurm=args.slurm,
             trimmer=args.trimmer,
             dryrun=args.dryrun,
