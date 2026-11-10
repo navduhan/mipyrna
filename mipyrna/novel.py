@@ -759,7 +759,9 @@ class Novel_miRNA:
         """
         Split predictions into known and novel miRNAs by BLAST against the known mature miRNA reference.
 
-        Writes known and novel Excel tables, FASTA files and a database summary.
+        Writes known and novel Excel tables, FASTA files and a database summary. Each
+        known miRNA keeps its best match in ``Known_ID`` and all its matches, best
+        first, in ``Known_IDs``.
         Exits the program if BLAST+ is not in the path.
 
         Args:
@@ -825,15 +827,30 @@ class Novel_miRNA:
             ],
         )
 
-        filterd_results = pd.DataFrame(
+        # A mature may differ from its miRBase entry by one base at the 5-prime end,
+        # so allow a one-base offset while keeping at least 18 aligned bases. When a
+        # candidate matches several entries, keep the best alignment.
+        hits = pd.DataFrame(
             blast_results[
-                (blast_results.qstart < 2)
-                & (blast_results.length > 19)
+                (blast_results.qstart < 3)
+                & (blast_results.length > 17)
                 & (blast_results.pident > 94)
             ]
-        ).drop_duplicates(subset=["Novel_ID"])
+        ).sort_values(by=["length", "pident", "bitscore"], ascending=False)
 
-        known_miRNAs_dataframe = filterd_results[["Novel_ID", "Known_ID"]]
+        filterd_results = hits.drop_duplicates(subset=["Novel_ID"])
+
+        all_matches = (
+            hits.drop_duplicates(subset=["Novel_ID", "Known_ID"])
+            .groupby("Novel_ID", sort=False)["Known_ID"]
+            .agg(";".join)
+            .to_frame("Known_IDs")
+            .reset_index()
+        )
+
+        known_miRNAs_dataframe = filterd_results[["Novel_ID", "Known_ID"]].merge(
+            all_matches, on="Novel_ID"
+        )
 
         known_miRNAs = known_miRNAs_dataframe.merge(
             novel_df, on=["Novel_ID"], indicator=True
