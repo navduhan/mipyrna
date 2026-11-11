@@ -36,6 +36,10 @@ if [[ ${#RUNS[@]} -eq 0 ]]; then
 fi
 
 for SRR in "${RUNS[@]}"; do
+  if [[ -s "${OUTDIR}/${SRR}.fastq.gz" ]] || [[ -s "${OUTDIR}/${SRR}_1.fastq.gz" && -s "${OUTDIR}/${SRR}_2.fastq.gz" ]]; then
+    echo "Exists: ${OUTDIR}/${SRR}*.fastq.gz"
+    continue
+  fi
   echo "Downloading ${SRR}"
   prefetch "${SRR}" --output-directory "${OUTDIR}/sra"
 

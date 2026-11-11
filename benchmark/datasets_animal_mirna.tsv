@@ -1,0 +1,2 @@
+study_id	study_type	organism	use_case	samples_or_runs	priority	source
+GSE299299	GEO Series (PRJNA1273867)	Mus musculus	2026 DICER1 perturbation benchmark in mouse MSCs (EV null, WT, D1320A RNase IIIa, E1705K RNase IIIb 5p-loss; 3 reps/group)	12 SE libraries	HIGH	https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE299299
