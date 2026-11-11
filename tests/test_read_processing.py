@@ -299,6 +299,21 @@ class UtilityAndContrastTests(unittest.TestCase):
             self.assertEqual(mu._allocated_cpus(), 12)
             self.assertEqual(mu.get_cpu(), 9)
 
+    def test_reference_index_and_integer_chromosome_lookup(self):
+        import pickle
+
+        from mipyrna.reads import Read_process
+
+        with tempfile.TemporaryDirectory() as temp:
+            fa = Path(temp) / "ref.fa"
+            fa.write_text(">MT\nAAAAAAAAAA\n>1\nACGTACGTAA\n")
+            reader = Read_process(reference=str(fa))
+            reader.ensure_index()
+            self.assertTrue((Path(temp) / "ref.fa.fai").is_file())
+            self.assertEqual(reader.get_sequence((1, 0, 4, "+")), "ACGT")
+            restored = pickle.loads(pickle.dumps(reader))
+            self.assertEqual(restored.get_sequence(("1", 0, 4, "-")), "ACGT")
+
 
 if __name__ == "__main__":
     unittest.main()

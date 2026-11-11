@@ -543,6 +543,9 @@ class Novel_miRNA:
         self.mem = mem
         self.rfam = rfam or {}
         self.rng = np.random.default_rng(random_seed)
+        self._reader = Read_process(reference=self.genome) if self.genome else None
+        if self._reader is not None:
+            self._reader.ensure_index()
 
     def get_precursor_structure(self, seq):
         """
@@ -726,8 +729,8 @@ class Novel_miRNA:
             raise ValueError("filtered_cluster is required")
 
         x = filtered_cluster.iloc[0]
-        chrom, start, end, strand = x["name"], x.start, x.end, x.strand
-        reader = Read_process(reference=self.genome)
+        chrom, start, end, strand = str(x["name"]), x.start, x.end, x.strand
+        reader = self._reader or Read_process(reference=self.genome)
         refseq = reader.get_sequence((chrom, max(0, start - 10), end + 10, strand))
         mature = reader.get_consensus_read(
             ref_precursor=refseq, aligned_cluster=filtered_cluster

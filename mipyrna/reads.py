@@ -52,6 +52,18 @@ class Read_process:
         """
 
         self.ref = reference
+        self._fasta = None
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state["_fasta"] = None
+        return state
+
+    def ensure_index(self):
+        """Build the FASTA index in the current process if missing."""
+
+        if self.ref and os.path.isfile(self.ref):
+            pf.Faidx(self.ref)
 
 
     def _collapse_process_sample(self, key, sample, outdir):
@@ -246,10 +258,12 @@ class Read_process:
         Returns:
             str: The region sequence.
         """
-        
-        sequences = pf.Fasta(self.ref)
 
-        seq = str(sequences[coordinates[0]][coordinates[1]:coordinates[2]])
+        if self._fasta is None:
+            assert self.ref is not None
+            self._fasta = pf.Fasta(self.ref)
+
+        seq = str(self._fasta[str(coordinates[0])][coordinates[1]:coordinates[2]])
 
         if coordinates[3] == '-':
 
