@@ -20,7 +20,6 @@ Configuration:
 
 Dependencies:
     - Bowtie 1 (``bowtie`` and ``bowtie-build``): Must be on PATH
-    - waiting: Waiting for SLURM jobs to finish
     - SLURM (optional): Cluster execution
 
 Classes / Functions / Exceptions:
@@ -35,8 +34,6 @@ import os
 import shutil
 import subprocess
 import sys
-
-from waiting import wait
 
 from mipyrna import utility as mu
 from mipyrna.logger import MiPyRNALogger
@@ -216,14 +213,12 @@ class Bowtie_Aligner:
                         f"Job successfully submited for {GenomeFasta} with {job_id} for indexing"
                     )
 
-                    wait(
-                        lambda: mu.check_status(job_id),
-                        waiting_for="alignment to finish",
-                    )
+                    mu.wait_for(job_id)
 
                     log.info("Genome indexing job finished")
                 except Exception:
                     log.error("Slurm job sumission failed")
+                    raise
 
             else:
                 try:
@@ -238,8 +233,8 @@ class Bowtie_Aligner:
                                 bowtie_command, shell=True, stdout=fout, stderr=ferr
                             )
                             if job_id != 0:
-                                log.warning(
-                                    f"command exited with code {job_id}: {bowtie_command}"
+                                raise RuntimeError(
+                                    f"bowtie-build exited with code {job_id}: {bowtie_command}"
                                 )
 
                             log.info(
@@ -248,6 +243,7 @@ class Bowtie_Aligner:
 
                 except Exception:
                     log.error("Job sumission failed")
+                    raise
 
         return
 
@@ -422,6 +418,7 @@ class Bowtie_Aligner:
 
                             except Exception:
                                 log.error("Slurm job sumission failed")
+                                raise
 
                         else:
                             local_cmds[key] = bowtie_command
@@ -436,10 +433,7 @@ class Bowtie_Aligner:
 
             if self.slurm:
                 for job in job_id:
-                    wait(
-                        lambda job=job: mu.check_status(job),
-                        waiting_for="alignment to finish",
-                    )
+                    mu.wait_for(job)
                     log.info(f"Alignment completed for job {job}")
 
             return outbowtie
@@ -463,7 +457,7 @@ class Bowtie_Aligner:
                     )
 
                 elif fileType == "fasta":
-                    bowtie_command = f"{execPATH} -f -x {genomeIndex} -p 40 -n 0 -e 80 -l 18 -a -m 5 --best --strata {samples[2]} > {outBAM}"
+                    bowtie_command = f"{execPATH} -f -x {genomeIndex} -p {cpu} -n 0 -e 80 -l 18 -a -m 5 --best --strata {samples[2]} > {outBAM}"
 
                 else:
                     raise ValueError(
@@ -486,9 +480,11 @@ class Bowtie_Aligner:
                         log.info(
                             f"Job successfully submited for {outBAM} with {job} for alignment"
                         )
+                        mu.wait_for(job)
 
                     except Exception:
                         log.error("Slurm job sumission failed")
+                        raise
 
                 else:
                     try:
@@ -501,8 +497,8 @@ class Bowtie_Aligner:
                                     bowtie_command, shell=True, stdout=fout, stderr=ferr
                                 )
                                 if job != 0:
-                                    log.warning(
-                                        f"command exited with code {job}: {bowtie_command}"
+                                    raise RuntimeError(
+                                        f"bowtie exited with code {job}: {bowtie_command}"
                                     )
                                 job_id.append(job)
                                 log.info(
@@ -511,5 +507,6 @@ class Bowtie_Aligner:
 
                     except Exception:
                         log.exception("Job sumission failed")
+                        raise
 
             return outBAM

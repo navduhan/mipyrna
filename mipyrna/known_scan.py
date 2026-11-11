@@ -277,14 +277,15 @@ class KnownScan:
         aln = Bowtie_Aligner(
             ref_genome=self.genome, configFile=config, outdir=query_dir, slurm=False
         )
-        sam = aln.run_alignment(
-            samplesDict={"query": [name, "0", query]},
-            fileType="fasta",
-            outType="SAM",
-            cpu=self.cpu,
-            mem=self.mem,
-            jobs=1,
-        )["query"][2]
+        with mu.without_array():
+            sam = aln.run_alignment(
+                samplesDict={"query": [name, "0", query]},
+                fileType="fasta",
+                outType="SAM",
+                cpu=self.cpu,
+                mem=self.mem,
+                jobs=1,
+            )["query"][2]
         aligned = Read_process().aligned_reads(
             {"query": [name, "0", sam]}, alignType="SAM", jobs=1
         )
@@ -331,20 +332,38 @@ class KnownScan:
             entries[mid] = entry
 
         queries = {}
-        for entry in entries.values():
+        paralog_hairpins = defaultdict(list)
+        for mid, entry in entries.items():
             queries[entry["hairpin"]] = entry["precursor"]
+            prefix = f"{mid.split('-', 1)[0].lower()}-" if "-" in mid else ""
+            mseq = entry["mature"]
+            for hname, hseq in hairpins.items():
+                if hname == entry["hairpin"] or (prefix and not hname.lower().startswith(prefix)):
+                    continue
+                pos = hseq.find(mseq)
+                if pos >= 0:
+                    queries[hname] = hseq
+                    paralog_hairpins[mid].append((hname, pos))
         loci = self._genome_hits(list(queries.items()), "precursor")
-        for entry in entries.values():
+        self._all_loci = {}
+        for mid, entry in entries.items():
             hits = loci.get(entry["hairpin"], [])
+            extra_hits = []
+            for hname, p_offset in paralog_hairpins.get(mid, ()):
+                for hchrom, hstart, hend, hstrand in loci.get(hname, []):
+                    hmature = hstart + p_offset if hstrand == "+" else hend - p_offset - entry["mature_length"]
+                    extra_hits.append((hchrom, hstrand, hmature, hstart, hend))
             if not hits:
+                self._all_loci[mid] = extra_hits
                 entry.update(chrom="", start="", end="", mature_start="", strand="")
                 continue
-            chrom, start, end, strand = hits[0]
             offset = entry["hairpin_start"]
-            if strand == "+":
-                mature_start = start + offset
-            else:
-                mature_start = end - offset - entry["mature_length"]
+            resolved_hits = []
+            for hchrom, hstart, hend, hstrand in hits:
+                hmature = hstart + offset if hstrand == "+" else hend - offset - entry["mature_length"]
+                resolved_hits.append((hchrom, hstrand, hmature, hstart, hend))
+            self._all_loci[mid] = resolved_hits + extra_hits
+            chrom, strand, mature_start, start, end = resolved_hits[0]
             entry.update(
                 chrom=chrom,
                 start=start,
@@ -464,25 +483,33 @@ class KnownScan:
 
         for sample, frame in aligned.items():
             per_read = defaultdict(dict)
+            per_star = defaultdict(dict)
             for row in frame.itertuples():
                 mid = row.name
                 window = windows.get(mid)
                 if window is None:
                     continue
-                position, length = window
                 start, end = int(row.start), int(row.end)
+                copies = int(row.reads)
+                star_window = star_windows.get(mid)
+                if star_window is not None:
+                    sposition, slength = star_window
+                    if (
+                        abs(start - sposition) <= self.tolerance
+                        and end <= sposition + slength + THREE_PRIME_SLACK
+                    ):
+                        per_star[row.read_name][mid] = copies
+                position, length = window
                 offset = start - position
                 if abs(offset) > self.tolerance:
                     continue
                 if end > position + length + THREE_PRIME_SLACK:
                     continue
-                copies = int(row.reads)
                 per_read[row.read_name][mid] = (offset, end - start, copies)
-                star_window = star_windows.get(mid)
-                if star_window is not None:
-                    sposition, slength = star_window
-                    if abs(start - sposition) <= self.tolerance and end <= sposition + slength + THREE_PRIME_SLACK:
-                        star[sample][mid] += copies
+
+            for mids in per_star.values():
+                for mid, copies in mids.items():
+                    star[sample][mid] += copies
 
             for read_name, mids in per_read.items():
                 hit = self.rfam.get(sample, {}).get(read_name)
@@ -585,6 +612,7 @@ class KnownScan:
         frames = Read_process().aligned_reads(aligned, alignType="SAM", jobs=self.jobs)
         counts = self._count(table, {name: value[2] for name, value in frames.items()}, star_windows)
         counts = self._score_structure(counts)
+        counts.attrs["all_loci"] = dict(getattr(self, "_all_loci", {}))
         counts.to_csv(os.path.join(self.outdir, "known_scan.tsv"), sep="\t", index=False)
         log.info(
             f"Known scan: {int(counts['detected'].sum())} of {len(counts)} known matures called"
@@ -620,13 +648,27 @@ class KnownScan:
         return counts
 
 
+def _to_int(value):
+    """Convert a coordinate value to int, or return None when missing or empty."""
+    if value is None or isinstance(value, bool) or pd.isna(value):
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return int(float(text))
+    except ValueError:
+        return None
+
+
 def merge_known_calls(known_df, scan_df, species):
     """Merge the alignment calls into the known miRNA table.
 
     A locus found by both paths keeps the discovery row and is marked ``both``.
     A locus found only by alignment is appended, and a detected name already
-    carried by an existing row, as an alias or at the same precursor, is counted
-    as a sibling instead of becoming a duplicate row.
+    carried by an existing row, as an alias, same mature sequence or on the same
+    arm of the same precursor, is counted as a sibling instead of becoming a
+    duplicate row.
 
     Args:
         known_df (pandas.DataFrame): Known miRNAs of the discovery path.
@@ -661,12 +703,24 @@ def merge_known_calls(known_df, scan_df, species):
                 if name and name not in aliases:
                     aliases[name] = index
 
+    has_arm = "position" in merged.columns and "position" in detected.columns
+    by_precursor_arm = {}
+    if len(merged) and "precursor" in merged.columns:
+        for index, row in merged.iterrows():
+            arm = str(row["position"]) if has_arm else ""
+            by_precursor_arm[(str(row["precursor"]), arm)] = index
+    by_mature = (
+        {str(row["mature"]): index for index, row in merged.iterrows()}
+        if len(merged) and "mature" in merged.columns
+        else {}
+    )
+
     added = []
+    added_by_mature = {}
+    added_by_precursor_arm = {}
+    added_ranks = {}
     siblings = 0
     counted = set()
-    by_precursor = {
-        str(row["precursor"]): index for index, row in merged.iterrows()
-    } if len(merged) and "precursor" in merged.columns else {}
     for call in detected.itertuples() if len(detected) else []:
         if call.Known_ID in primary or call.Known_ID in counted:
             continue
@@ -674,14 +728,71 @@ def merge_known_calls(known_df, scan_df, species):
         if call.Known_ID in aliases:
             siblings += 1
             continue
-        sibling = by_precursor.get(str(call.precursor))
+        call_arm = str(getattr(call, "position", "")) if has_arm else ""
+        precursor_key = (str(call.precursor), call_arm)
+        sibling = by_mature.get(str(call.mature))
+        if sibling is None:
+            sibling = by_precursor_arm.get(precursor_key)
         if sibling is not None:
-            names = str(merged.at[sibling, "Known_IDs"])
-            if call.Known_ID not in names.split(";"):
-                merged.at[sibling, "Known_IDs"] = f"{names};{call.Known_ID}"
+            if "Known_IDs" in merged.columns:
+                names = str(merged.at[sibling, "Known_IDs"])
+                if call.Known_ID not in names.split(";"):
+                    merged.at[sibling, "Known_IDs"] = f"{names};{call.Known_ID}"
             siblings += 1
             continue
-        number = len(merged) + len(added) + 1
+
+        rank = (
+            float(getattr(call, "unique_reads", 0.0)),
+            float(getattr(call, "star_reads", 0.0)),
+            float(getattr(call, "total_reads", 0.0)),
+        )
+        staged_idx = added_by_mature.get(str(call.mature))
+        if staged_idx is None:
+            staged_idx = added_by_precursor_arm.get(precursor_key)
+        if staged_idx is not None:
+            staged = added[staged_idx]
+            existing_ids = staged["Known_IDs"].split(";")
+            if call.Known_ID not in existing_ids:
+                existing_ids.append(call.Known_ID)
+            if rank > added_ranks[staged_idx]:
+                existing_ids = [call.Known_ID, *[i for i in existing_ids if i != call.Known_ID]]
+                identifier = f"{species}_miPyRNA_{call.chrom}_miR_{len(merged) + staged_idx + 1}"
+                staged.update(
+                    Novel_ID=identifier,
+                    Known_ID=call.Known_ID,
+                    chrom=call.chrom,
+                    mature=call.mature,
+                    mature_length=call.mature_length,
+                    precursor=call.precursor,
+                    precursor_length=call.precursor_length,
+                    start=call.start,
+                    end=call.end,
+                    mature_start=call.mature_start,
+                    strand=call.strand,
+                    struct=call.struct,
+                    mfe=call.mfe,
+                    mature_check=call.mature_check,
+                    features=call.features,
+                    mature_reads=call.total_reads,
+                    position=call.position,
+                    star_reads=call.star_reads,
+                    star=call.star,
+                    rfam_reads=float(getattr(call, "rfam_reads", 0.0)),
+                    Rfam=str(getattr(call, "Rfam", "-")),
+                    score=call.score,
+                    ml_score=call.ml_score,
+                    Database=call.Database,
+                    raw_ID=call.Known_ID,
+                    alignment_reads=float(call.total_reads),
+                )
+                added_ranks[staged_idx] = rank
+                added_by_precursor_arm[precursor_key] = staged_idx
+            staged["Known_IDs"] = ";".join(existing_ids)
+            siblings += 1
+            continue
+
+        staged_idx = len(added)
+        number = len(merged) + staged_idx + 1
         identifier = f"{species}_miPyRNA_{call.chrom}_miR_{number}"
         added.append(
             {
@@ -719,6 +830,9 @@ def merge_known_calls(known_df, scan_df, species):
                 "alignment_reads": float(call.total_reads),
             }
         )
+        added_by_mature[str(call.mature)] = staged_idx
+        added_by_precursor_arm[precursor_key] = staged_idx
+        added_ranks[staged_idx] = rank
 
     if added:
         merged = pd.concat([merged, pd.DataFrame(added)], ignore_index=True)
@@ -729,7 +843,8 @@ def drop_detected_novel(novel_df, scan_df, window=5):
     """Remove novel candidates that the scan detected as a known miRNA.
 
     A candidate is dropped when it sits at the same locus as a detected known
-    mature, or when it shares the precursor sequence of one.
+    mature or overlaps a detected known precursor hairpin, or when it shares the
+    precursor sequence of one.
 
     Args:
         novel_df (pandas.DataFrame): Novel miRNAs of the discovery path.
@@ -747,22 +862,44 @@ def drop_detected_novel(novel_df, scan_df, window=5):
         return novel_df, 0
 
     loci = defaultdict(list)
+    hairpin_intervals = defaultdict(list)
+    extra_loci = scan_df.attrs.get("all_loci", {}) if hasattr(scan_df, "attrs") else {}
     for row in detected.itertuples():
-        loci[(row.chrom, row.strand)].append(int(row.mature_start))
-    precursors = set(detected["precursor"].astype(str))
+        chrom = str(getattr(row, "chrom", "") or "").strip()
+        strand = str(getattr(row, "strand", "") or "").strip()
+        mstart = _to_int(getattr(row, "mature_start", None))
+        hstart = _to_int(getattr(row, "start", None))
+        hend = _to_int(getattr(row, "end", None))
+        if chrom and strand and mstart is not None:
+            loci[(chrom, strand)].append(mstart)
+        if chrom and strand and hstart is not None and hend is not None:
+            hairpin_intervals[(chrom, strand)].append((hstart, hend))
+        for echrom, estrand, emstart, ehstart, ehend in extra_loci.get(getattr(row, "Known_ID", ""), ()):
+            loci[(str(echrom), str(estrand))].append(int(emstart))
+            hairpin_intervals[(str(echrom), str(estrand))].append((int(ehstart), int(ehend)))
+    precursors = (
+        set(detected["precursor"].dropna().astype(str))
+        if "precursor" in detected.columns
+        else set()
+    )
 
     keep = []
     removed = 0
-    for index, chrom, strand, start, precursor in zip(
-        novel_df.index,
-        novel_df["chrom"],
-        novel_df["strand"],
-        novel_df["mature_start"],
-        novel_df["precursor"],
-    ):
+    for index, row in novel_df.iterrows():
+        chrom = str(row.get("chrom", "") or "").strip()
+        strand = str(row.get("strand", "") or "").strip()
+        start = _to_int(row.get("mature_start"))
+        nstart = _to_int(row.get("start"))
+        nend = _to_int(row.get("end"))
+        precursor = str(row.get("precursor", ""))
         hits = loci.get((chrom, strand), [])
-        near = any(abs(int(start) - position) <= window for position in hits)
-        if near or str(precursor) in precursors:
+        near = start is not None and any(abs(start - position) <= window for position in hits)
+        overlaps_hairpin = (
+            nstart is not None
+            and nend is not None
+            and any(a <= nend and b >= nstart for a, b in hairpin_intervals.get((chrom, strand), []))
+        )
+        if near or overlaps_hairpin or (precursor and precursor in precursors):
             removed += 1
             continue
         keep.append(index)

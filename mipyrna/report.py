@@ -582,13 +582,20 @@ def _reads(meta, dirs):
             _num(collapsed[0]) if collapsed else "-",
             f"{_num(int(aligned[1]))} ({aligned[2]}%)" if aligned else "-",
         ])
+    rfam_note = (
+        " Reads matching Rfam non-coding RNAs were removed prior to genome alignment, so the aligned percentage "
+        "is relative to the Rfam-filtered unique sequences."
+        if meta.get("rfam", {}).get("filter")
+        else ""
+    )
     out = [
         Paragraph("Read processing", H1),
         Paragraph(
             "Reads were trimmed of the 3' adapter, collapsed to unique sequences with their read counts, and aligned to "
             "the genome with Bowtie. Aligned reads are counted over the unique sequences, so the percentage is the share "
-            "of unique sequences that mapped, not the share of all reads. Raw and trimmed read counts are available "
-            "for Trimmomatic only.",
+            "of unique sequences that mapped, not the share of all reads."
+            + rfam_note
+            + " Raw and trimmed read counts are available for Trimmomatic only.",
             BODY,
         ),
         _table(rows, [3.6 * cm, 3 * cm, 3.8 * cm, 3 * cm, 3.6 * cm]),
@@ -622,8 +629,8 @@ def _discovery(meta, params, base, known, novel):
             f"and scored with the bundled {params.get('species_type', '')} neural network model. A candidate is kept if "
             f"its score is at least {params.get('score_cutoff', '-')}, its randfold p-value is at most "
             f"{params.get('randfold_pvalue_cutoff', '-')} and it has at least {params.get('min_mature_reads', '-')} "
-            "mature reads. Candidates matching a known miRNA (BLAST identity above 94% over more than 19 nt) are reported "
-            "as known and the rest as novel. Novel miRNAs are computational predictions and should be validated.",
+            "mature reads. Candidates matching a known miRNA (BLAST identity above 94% over at least 18 nt with at most a "
+            "1-nt 5' offset) are reported as known and the rest as novel. Novel miRNAs are computational predictions and should be validated.",
             BODY,
         ),
     ]

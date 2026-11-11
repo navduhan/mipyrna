@@ -89,6 +89,11 @@ def MiPyRNALogger(mode, log):
     Returns:
         logging.Logger: The configured logger.
     """
+    if logging.getLoggerClass() is not logging.Logger:
+        logging.setLoggerClass(logging.Logger)
+    existing = logging.Logger.manager.loggerDict.get(log)
+    if isinstance(existing, logging.Logger) and type(existing) is not logging.Logger:
+        del logging.Logger.manager.loggerDict[log]
     logger = logging.getLogger(log)
     logger.propagate = False
     if logger.handlers:

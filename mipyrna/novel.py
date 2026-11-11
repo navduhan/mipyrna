@@ -45,6 +45,7 @@ import copy
 import multiprocessing
 import os
 import re
+import shlex
 import shutil
 import sys
 from collections import defaultdict
@@ -874,7 +875,17 @@ class Novel_miRNA:
         """
         loci = defaultdict(list)
         for r in known_df.itertuples():
-            loci[(r.chrom, r.strand)].append((r.start, r.end))
+            chrom = getattr(r, "chrom", "")
+            rstart = getattr(r, "start", None)
+            rend = getattr(r, "end", None)
+            if (
+                chrom != ""
+                and rstart is not None
+                and rend is not None
+                and str(rstart) not in ("", "nan")
+                and str(rend) not in ("", "nan")
+            ):
+                loci[(chrom, r.strand)].append((int(rstart), int(rend)))
         keep = [not self._overlaps(r, loci) for _i, r in novel_df.iterrows()]
         log.info(
             f"Removed {len(keep) - sum(keep)} novel candidates overlapping known miRNA hairpins"
@@ -982,7 +993,7 @@ class Novel_miRNA:
 
             sys.exit(1)
         else:
-            blastdb_command = f"makeblastdb -in {mirbase_data['mature']} -dbtype 'nucl'"
+            blastdb_command = f"makeblastdb -in {shlex.quote(mirbase_data['mature'])} -dbtype 'nucl'"
 
         mu.local_run(
             program="makeblastdb",
@@ -999,7 +1010,11 @@ class Novel_miRNA:
             sys.exit(1)
         else:
             blast_out = os.path.join(blast, "blast_mature_vs_known.txt")
-            blastn_command = f"blastn -db {mirbase_data['mature']} -query {novel_mature} -evalue 100 -out {blast_out} -outfmt 6 -word_size 4"
+            blastn_command = (
+                f"blastn -db {shlex.quote(mirbase_data['mature'])} "
+                f"-query {shlex.quote(novel_mature)} -strand plus "
+                f"-evalue 100 -out {shlex.quote(blast_out)} -outfmt 6 -word_size 4"
+            )
             mu.local_run(
                 program="blastn",
                 command=blastn_command,
@@ -1027,11 +1042,12 @@ class Novel_miRNA:
         )
 
         # A mature may differ from its miRBase entry by one base at the 5-prime end,
-        # so allow a one-base offset while keeping at least 18 aligned bases. When a
-        # candidate matches several entries, keep the best alignment.
+        # so allow a one-base offset while keeping at least 18 forward-strand aligned bases.
+        # When a candidate matches several entries, keep the best alignment.
         hits = pd.DataFrame(
             blast_results[
                 (blast_results.qstart < 3)
+                & (blast_results.sstart < blast_results.send)
                 & (blast_results.length > 17)
                 & (blast_results.pident > 94)
             ]

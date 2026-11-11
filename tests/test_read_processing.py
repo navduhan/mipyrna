@@ -13,7 +13,8 @@ import pandas as pd
 from mipyrna import utility as mu
 from mipyrna.cli import build_parser
 from mipyrna.clustering import Cluster_reads
-from mipyrna.known_scan import KnownScan, merge_known_calls
+from mipyrna.differential import _split_contrast
+from mipyrna.known_scan import KnownScan, drop_detected_novel, merge_known_calls
 from mipyrna.novel import Novel_miRNA
 from mipyrna.reads import Read_process
 from mipyrna.rfamily import FilterRNAfamlies
@@ -196,6 +197,107 @@ class KnownCountTests(unittest.TestCase):
         self.assertEqual(added, 1)
         self.assertEqual(merged.iloc[0]["rfam_reads"], 7)
         self.assertEqual(merged.iloc[0]["Rfam"], "ref1,ref2")
+
+    def test_opposite_arm_star_reads_are_counted_and_deduplicated(self):
+        table = pd.DataFrame([{
+            "Known_ID": "ath-miR156a-5p", "hairpin": "ath-MIR156a", "hairpin_source": "miRBase",
+            "hairpin_start": 10, "Database": "miRBase", "precursor": "A" * 120,
+            "precursor_length": 120, "mature": "A" * 21, "mature_length": 21,
+            "chrom": "2", "start": 1000, "end": 1120, "mature_start": 1010,
+            "strand": "+", "struct": "(" * 50 + "." * 20 + ")" * 50, "mfe": -40.0,
+            "mature_check": "ok", "position": "5-prime", "star": "T" * 21,
+        }])
+        frame = pd.DataFrame([
+            ("s_1_x12", "ath-miR156a-5p", 10, 31, 12),
+            ("s_2_x5", "ath-miR156a-5p", 85, 106, 5),
+            ("s_2_x5", "ath-miR156a-5p", 85, 106, 5),
+        ], columns=["read_name", "name", "start", "end", "reads"])
+        counts = KnownScan()._count(table, {"s": frame}, {"ath-miR156a-5p": (85, 21)})
+        self.assertEqual(counts.iloc[0]["total_reads"], 12.0)
+        self.assertEqual(counts.iloc[0]["star_reads"], 5.0)
+
+    def test_merge_keeps_opposite_arms_distinct_and_merges_same_arm_variants(self):
+        known = pd.DataFrame([{
+            "Novel_ID": "ath_miPyRNA_2_miR_1", "Known_ID": "ath-miR156a-5p",
+            "Known_IDs": "ath-miR156a-5p", "chrom": "2", "mature": "CTGACAGAAGAGAGTGAGCACA",
+            "mature_length": 22, "precursor": "HP_SEQ", "precursor_length": 120,
+            "start": 100, "end": 220, "mature_start": 110, "strand": "+",
+            "struct": "." * 120, "mfe": -40.0, "mature_check": "ok", "features": "",
+            "mature_reads": 50, "position": "5-prime", "star_reads": 5,
+            "inconsistent_fraction": 0.0, "star": "TGCTCACTGCTCTTTCTGTCAGAT",
+            "randfold_pvalue": 0.01, "cluster": 1, "rfam_reads": 0.0, "Rfam": "-",
+            "score": 0.9, "ml_score": 0.9, "heuristic_score": 2.0,
+            "Database": "miRBase", "raw_ID": "r1",
+        }])
+        scan = pd.DataFrame([
+            {
+                "Known_ID": "Ath-miR156a", "Database": "PmiREN", "precursor": "HP_SEQ",
+                "precursor_length": 120, "mature": "TGACAGAAGAGAGTGAGCACA", "mature_length": 21,
+                "chrom": "2", "start": 100, "end": 220, "mature_start": 111, "strand": "+",
+                "struct": "." * 120, "mfe": -40.0, "mature_check": "ok", "features": "",
+                "position": "5-prime", "star": "TGCTCACTGCTCTTTCTGTCAGAT",
+                "total_reads": 50.0, "unique_reads": 10.0, "star_reads": 5.0,
+                "rfam_reads": 0.0, "Rfam": "-", "score": 0.9, "ml_score": 0.9, "detected": True,
+            },
+            {
+                "Known_ID": "ath-miR156a-3p", "Database": "miRBase", "precursor": "HP_SEQ",
+                "precursor_length": 120, "mature": "TGCTCACTGCTCTTTCTGTCAGAT", "mature_length": 24,
+                "chrom": "2", "start": 100, "end": 220, "mature_start": 185, "strand": "+",
+                "struct": "." * 120, "mfe": -40.0, "mature_check": "ok", "features": "",
+                "position": "3-prime", "star": "CTGACAGAAGAGAGTGAGCACA",
+                "total_reads": 20.0, "unique_reads": 20.0, "star_reads": 50.0,
+                "rfam_reads": 0.0, "Rfam": "-", "score": 0.9, "ml_score": 0.9, "detected": True,
+            },
+        ])
+        merged, added, _, siblings = merge_known_calls(known, scan, "ath")
+        self.assertEqual(added, 1)
+        self.assertEqual(siblings, 1)
+        self.assertEqual(merged["Known_ID"].tolist(), ["ath-miR156a-5p", "ath-miR156a-3p"])
+        self.assertEqual(merged.iloc[0]["Known_IDs"], "ath-miR156a-5p;Ath-miR156a")
+
+    def test_drop_detected_novel_handles_unmapped_and_paralog_loci(self):
+        scan = pd.DataFrame([
+            {
+                "Known_ID": "ath-miR999", "chrom": "", "strand": "", "start": "", "end": "",
+                "mature_start": "", "precursor": "UNMAPPED_PRECURSOR", "detected": True,
+            },
+            {
+                "Known_ID": "ath-miR156a-5p", "chrom": "2", "strand": "+", "start": 100, "end": 220,
+                "mature_start": 110, "precursor": "HP_A", "detected": True,
+            },
+        ])
+        scan.attrs["all_loci"] = {"ath-miR156a-5p": [("4", "+", 510, 500, 620)]}
+        novel = pd.DataFrame([
+            {"Novel_ID": "n1", "chrom": "4", "strand": "+", "start": 505, "end": 615, "mature_start": 510, "precursor": "HP_B"},
+            {"Novel_ID": "n2", "chrom": "1", "strand": "-", "start": 900, "end": 990, "mature_start": 910, "precursor": "UNIQUE_NOVEL"},
+        ])
+        filtered, removed = drop_detected_novel(novel, scan)
+        self.assertEqual(removed, 1)
+        self.assertEqual(filtered["Novel_ID"].tolist(), ["n2"])
+
+
+class UtilityAndContrastTests(unittest.TestCase):
+    def test_split_contrast_supports_hyphenated_groups(self):
+        c1, c2, label = _split_contrast("Col-0-ago1-27", {"Col-0", "ago1-27"})
+        self.assertEqual((c1, c2, label), ("Col-0", "ago1-27", "Col-0-ago1-27"))
+
+    def test_read_input_file_skips_blank_lines_and_deduplicates_pairs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            sheet = Path(temp) / "samples.txt"
+            sheet.write_text("\n1 s1 Col-0 s1.fq\n\n2 s2 ago1-27 s2.fq\n   \n")
+            parsed = mu.read_input_file(str(sheet), temp, paired=False)
+            self.assertEqual(list(parsed["samples"]), ["s1", "s2"])
+            self.assertEqual(parsed["combinations"], ["Col-0-ago1-27"])
+
+    def test_local_run_raises_on_nonzero_exit(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaises(RuntimeError):
+                mu.local_run("false_cmd", "exit 2", outdir=temp)
+
+    def test_allocated_cpus_honors_slurm_cpus_per_task(self):
+        with patch.dict("os.environ", {"SLURM_CPUS_PER_TASK": "12"}):
+            self.assertEqual(mu._allocated_cpus(), 12)
+            self.assertEqual(mu.get_cpu(), 9)
 
 
 if __name__ == "__main__":

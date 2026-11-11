@@ -67,20 +67,14 @@ class Read_process:
         """
         collapsed_reads = {}
         
-        if sample[2].endswith(".gz"):
-            file = gzip.open(sample[2], "rt")
-        else:
-            file = open(sample[2])
-            
-        fastqs = SeqIO.parse(file, 'fastq')
-
-        for fq in fastqs:
-            seq = str(fq.seq)
-            
-            if seq in collapsed_reads:
-                collapsed_reads[seq]['reads'] += 1
-            else:
-                collapsed_reads[seq] = {'name': fq.name, 'reads': 1}
+        open_fn = gzip.open if sample[2].endswith(".gz") else open
+        with open_fn(sample[2], "rt") as file:
+            for fq in SeqIO.parse(file, 'fastq'):
+                seq = str(fq.seq)
+                if seq in collapsed_reads:
+                    collapsed_reads[seq]['reads'] += 1
+                else:
+                    collapsed_reads[seq] = {'name': fq.name, 'reads': 1}
 
         count = 1  
         output = os.path.join(outdir, f"{key}_collapsed_reads.txt")

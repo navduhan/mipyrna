@@ -51,6 +51,7 @@ Classes / Functions / Exceptions:
 """
 
 import configparser
+import contextlib
 import hashlib
 import math
 import os
@@ -103,22 +104,22 @@ def read_input_file(infile, inpath, paired = False):
             log.info("Reading input samples File ")
 
             for line in file:
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#") or stripped.lower().startswith("samplename"):
+                    continue
+                lines = re.split(r'\s+', stripped)
 
-                if not line.startswith("#") and not line.startswith("SampleName"):
-                    line = line.strip()
-                    lines = re.split(r'\s+', line.rstrip())
+                if paired:
 
-                    if paired:
+                    samples[lines[1]] = [lines[1],lines[2],os.path.join(inpath,lines[3]), os.path.join(inpath,lines[4])]
 
-                        samples[lines[1]] = [lines[1],lines[2],os.path.join(inpath,lines[3]), os.path.join(inpath,lines[4])]
+                else:
 
-                    else:
+                    samples[lines[1]] = [lines[1], lines[2], os.path.join(inpath,lines[3])]
 
-                        samples[lines[1]] = [lines[1], lines[2], os.path.join(inpath,lines[3])]
+                if lines[2] not in factors:
 
-                    if lines[2] not in factors:
-
-                        factors.append(lines[2])
+                    factors.append(lines[2])
     except Exception:
 
         log.error("Please provide a valid input file")
@@ -132,11 +133,12 @@ def read_input_file(infile, inpath, paired = False):
     try:
 
         # create combinations from factors 
+        seen_pairs = set()
         for i in factors:
             for j in factors:
 
-                if i != j and j+"-"+i not in combinations:
-
+                if i != j and (j, i) not in seen_pairs:
+                    seen_pairs.add((i, j))
                     combinations.append(i+"-"+j)
     except Exception:
 
@@ -360,6 +362,18 @@ def use_array(cpu=None, mem=None, limit=None):
         _array.update(cpu=cpu, mem=mem, limit=limit)
 
 
+@contextlib.contextmanager
+def without_array():
+    """Temporarily disable Slurm job-array dispatch for lightweight local helper commands."""
+    saved = dict(_array)
+    _array.clear()
+    try:
+        yield
+    finally:
+        _array.clear()
+        _array.update(saved)
+
+
 def slurm_preflight():
     """Check that Slurm can be used from the current shell.
 
@@ -551,13 +565,13 @@ def local_run(program=None, command: str | dict = "", outdir=".", message=None, 
             with open(os.path.join(logdir, f"{name}.out"), 'w+') as fout, \
                     open(os.path.join(logdir, f"{name}.err"), 'w+') as ferr:
                 rc = subprocess.call(cmd, shell=True, stdout=fout, stderr=ferr)
-        except Exception:
-            log.error(f"Job submission failed for {name}")
-            return None
+        except Exception as exc:
+            log.error(f"Job submission failed for {name}: {exc}")
+            raise
         if rc != 0:
-            log.warning(f"{name} exited with code {rc}; see logs/{name}.err")
-        else:
-            log.info(f"{name} finished")
+            log.error(f"{name} exited with code {rc}; see {logdir}/{name}.err")
+            raise RuntimeError(f"{name} exited with code {rc}; see {logdir}/{name}.err")
+        log.info(f"{name} finished")
         return rc
 
     if isinstance(command, dict) and _array and command:
@@ -576,7 +590,7 @@ def local_run(program=None, command: str | dict = "", outdir=".", message=None, 
     if isinstance(command, dict):
         log.info(f"Running {program} on {len(command)} sample(s), {jobs} at a time")
         with ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
-            codes = pool.map(lambda k: run(f"{program}_{k}", command[k]), command)
+            codes = list(pool.map(lambda k: run(f"{program}_{k}", command[k]), command))
             return dict(zip(command, codes))
     return run(program, command)
 
@@ -635,15 +649,36 @@ def resolve_cpu(cpu, jobs, tasks, slurm=False):
         return 20 * max(1, min(int(jobs or tasks), int(tasks)))
     return 8
 
+def _allocated_cpus():
+    """Get the cores available to this process from Slurm, CPU affinity or the host.
+
+    Returns:
+        int: Available CPU count (at least 1).
+    """
+    slurm_cpus = os.environ.get("SLURM_CPUS_PER_TASK", "")
+    m = re.match(r"^\d+", slurm_cpus.strip())
+    if m and int(m.group(0)) > 0:
+        return int(m.group(0))
+    getaffinity = getattr(os, "sched_getaffinity", None)
+    if getaffinity is not None:
+        try:
+            affinity = len(getaffinity(0))
+            if affinity > 0:
+                return affinity
+        except OSError:
+            pass
+    return psutil.cpu_count() or 1
+
+
 def get_cpu():
 
     """Get the number of CPUs to use.
 
     Returns:
-        80% of the CPU count of the system, rounded down.
+        80% of the available CPU count, rounded down (at least 1).
     """
 
-    return math.floor((psutil.cpu_count() or 1)*0.8)
+    return max(1, math.floor(_allocated_cpus() * 0.8))
 
 def split_cpu(cpu, jobs=None, tasks=1):
     """Split a total core budget into parallel jobs and threads per job.
@@ -669,8 +704,8 @@ def replace_cpu(args, args2, cpu=None):
     Args:
         args: List of config option strings.
         args2: Option names that denote the thread count.
-        cpu: Threads to use, capped at the machine core count. Defaults to the
-            config value, capped at 80% of the machine.
+        cpu: Threads to use, capped at the available core count. Defaults to the
+            config value, capped at 80% of the available cores.
 
     Returns:
         The config list with the thread option replaced.
@@ -680,7 +715,7 @@ def replace_cpu(args, args2, cpu=None):
 
     opt , num = mat[0].split(" ")
     if cpu is not None:
-        num = min(int(cpu), psutil.cpu_count() or 1)
+        num = max(1, min(int(cpu), _allocated_cpus()))
     else:
         count = get_cpu()
 

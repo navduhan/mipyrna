@@ -48,6 +48,49 @@ r: Any = robjects.r
 
 to_dataframe = r('function(x) data.frame(x)')
 
+
+def _split_contrast(co, levels=None):
+    """Split a comparison into its two group names and display label.
+
+    Args:
+        co (str or tuple): Comparison written as ``"A-B"``, ``"A_vs_B"`` or ``(A, B)``.
+        levels (iterable, optional): Group names present in the design table, used to
+            resolve group names that contain hyphens.
+
+    Returns:
+        tuple: ``(group_a, group_b, label)``.
+
+    Raises:
+        ValueError: If the comparison is ambiguous or does not match two groups.
+    """
+    if isinstance(co, (tuple, list)) and len(co) == 2:
+        c1, c2 = str(co[0]), str(co[1])
+        return c1, c2, f"{c1}-{c2}"
+    label = str(co)
+    if levels:
+        known = {str(lv) for lv in levels}
+        matches = [
+            (label[:idx], label[idx + 1 :])
+            for idx, ch in enumerate(label)
+            if ch == "-" and label[:idx] in known and label[idx + 1 :] in known
+        ]
+        if len(matches) == 1:
+            return matches[0][0], matches[0][1], label
+        if "_vs_" in label:
+            left, right = label.split("_vs_", 1)
+            if left in known and right in known:
+                return left, right, label
+        if len(matches) > 1:
+            raise ValueError(f"Ambiguous contrast {label!r} for levels {sorted(known)}")
+    if "_vs_" in label:
+        c1, c2 = label.split("_vs_", 1)
+        return c1, c2, label
+    if label.count("-") == 1:
+        c1, c2 = label.split("-", 1)
+        return c1, c2, label
+    raise ValueError(f"Cannot resolve contrast {label!r} against design levels")
+
+
 def runDESeq2(countDF=None, targetFile=None, design='sample',combination=None,  mirna_column='mature_id',  mmg =False, subset=False, lib=None):
     """Run DESeq2 differential expression analysis on raw read counts.
 
@@ -79,14 +122,17 @@ def runDESeq2(countDF=None, targetFile=None, design='sample',combination=None,  
         log.error("DESeq2 installation was not found ")
         raise
 
-
+    countDF = countDF.copy()
     mirna_id = countDF[[mirna_column]].values
     countDF.set_index(mirna_column, inplace=True)
+    levels = set(targetFile[design].astype(str))
 
     deseq_results=pd.DataFrame(mirna_id,columns=[mirna_column])
+    if not len(combination):
+        return deseq_results
 
     # subset: one iteration per combination; otherwise all count data as a single set
-    loopSamples = np.array(range(len(combination))) if subset else np.array([1])
+    loopSamples = np.array(range(len(combination))) if subset else np.array([0])
     
     # Now loopthrough combination in loopSamples 
 
@@ -94,11 +140,10 @@ def runDESeq2(countDF=None, targetFile=None, design='sample',combination=None,  
 
         if subset:
 
-            c1,c2 = combination[j].split("-")
+            c1, c2, _ = _split_contrast(combination[j], levels)
 
-            subDF = countDF.filter(regex=f'{c1}|{c2}') # Subset the count data for one combination
-
-            subTF = targetFile[targetFile['sample'].str.contains(f'{c1}|{c2}')] # Subset the target data for one combination
+            subTF = targetFile[targetFile[design].astype(str).isin([c1, c2])]
+            subDF = countDF.loc[:, [col for col in subTF.index if col in countDF.columns]]
 
             with localconverter(get_conversion() + pandas2ri.converter + numpy2ri.converter):
 
@@ -137,7 +182,7 @@ def runDESeq2(countDF=None, targetFile=None, design='sample',combination=None,  
 
         for co in comb:
 
-            c1,c2=co.split("-")
+            c1, c2, co_label = _split_contrast(co, levels)
 
             R_contrast = robjects.vectors.StrVector(np.array([design,c1,c2]))
 
@@ -157,7 +202,7 @@ def runDESeq2(countDF=None, targetFile=None, design='sample',combination=None,  
             result.columns = ['baseMean','logFC','lfcSE','stat','pvalue','FDR']
             result.reset_index(drop=True, inplace=True)
 
-            result.columns=[s+"("+co+")" for s in result.columns]  # Add combination names to the column names 
+            result.columns=[s+"("+co_label+")" for s in result.columns]  # Add combination names to the column names 
 
             deseq_results.reset_index(drop=True, inplace=True)
 
@@ -194,141 +239,85 @@ def run_edgeR(countDF=None, targetFile=None, combination=None,  mirna_column='ma
     try:
         if lib is None:
             edgeR = importr('edgeR')
-            limma = importr('limma')
+            importr('limma')
         else:
             edgeR = importr('edgeR', lib_loc=lib)
-            limma = importr('limma', lib_loc=lib)
+            importr('limma', lib_loc=lib)
             
     except Exception:
         log.error("edgeR installation not found. Please install edgeR")
         raise
 
+    countDF = countDF.copy()
     mirna_id = countDF[[mirna_column]].values
     countDF.set_index(mirna_column, inplace=True)
+    all_ids = countDF.index
+    levels = set(targetFile['sample'].astype(str))
 
     edgeR_results=pd.DataFrame(mirna_id,columns=[mirna_column])
+    if not len(combination):
+        return edgeR_results
 
     # subset: one iteration per combination; otherwise all count data as a single set
-    loopSamples = np.array(range(len(combination))) if subset else np.array([1])
+    loopSamples = np.array(range(len(combination))) if subset else np.array([0])
     
     # Now loopthrough combination in loopSamples 
 
     for j in loopSamples:
-        
 
         if subset:
 
-            c1,c2 = combination[j].split("-")
+            c1, c2, _ = _split_contrast(combination[j], levels)
 
-            subTF = targetFile[targetFile['sample'].str.contains(f'{c1}|{c2}')] # Subset the target data for one combination
-
+            subTF = targetFile[targetFile['sample'].astype(str).isin([c1, c2])]
+            active_df = countDF.loc[:, [col for col in subTF.index if col in countDF.columns]]
             groups = subTF['sample']
-
-            with localconverter(get_conversion() + pandas2ri.converter + numpy2ri.converter):
-
-                count_matrix = py2rpy(countDF)
-
-                group = py2rpy(groups)
-
-            dds = edgeR.DGEList(counts=count_matrix,group=group)
-    
-            dds = edgeR.calcNormFactors(dds)
-            
-            r.assign('group', group)
-
-            r.assign('dds', dds)
-
-            design = r('model.matrix(~0+dds$samples$group,data=dds$samples)')
-
-            design = pd.DataFrame(design)
-
-            col= r('levels(dds$samples$group)')
-
-            design.columns = list(col)
-
-            design =design.to_records(index=False)
-
-            cont= robjects.vectors.StrVector([combination[j]])
-           
-            contrasts = limma.makeContrasts(contrasts=cont,levels=design)
+            comb = [combination[j]]
 
         else:
 
-            counts = np.asarray(countDF,dtype=int)
-
-            cpm = (counts * 1e6) / counts.sum(axis=0) 
-
-            cpm =pd.DataFrame(data=cpm,index=countDF.index,columns=countDF.columns)
-
-            cpm = countDF[cpm.sum(axis=1)>1]
-
-            countDF = countDF[countDF.sum(axis=1)>2]
-
+            active_df = countDF[countDF.sum(axis=1)>2]
             groups = targetFile['sample']
+            comb = list(combination)
 
-            with localconverter(get_conversion() + pandas2ri.converter + numpy2ri.converter):
+        with localconverter(get_conversion() + pandas2ri.converter + numpy2ri.converter):
+            count_matrix = py2rpy(active_df)
+            group = py2rpy(groups)
 
-                count_matrix = py2rpy(countDF)
+        dds = edgeR.DGEList(counts=count_matrix,group=group)
+        dds = edgeR.calcNormFactors(dds)
+        r.assign('group', group)
+        r.assign('dds', dds)
+        design_mat = r('model.matrix(~0+dds$samples$group,data=dds$samples)')
+        level_names = [str(lv) for lv in r('levels(dds$samples$group)')]
 
-                group = py2rpy(groups)
-
-            dds = edgeR.DGEList(counts=count_matrix,group=group)
-    
-            dds = edgeR.calcNormFactors(dds)
-            
-            r.assign('group', group)
-
-            r.assign('dds', dds)
-
-            design = r('model.matrix(~0+dds$samples$group,data=dds$samples)')
-
-            design = pd.DataFrame(design)
-
-            col= r('levels(dds$samples$group)')
-
-            design.columns = list(col)
-
-            design =design.to_records(index=False)
-            
-            cont= robjects.vectors.StrVector(combination)
-           
-            contrasts = limma.makeContrasts(contrasts=cont,levels=design)
-        
-        # Itrate through all the given combination for DEG comparision 
-    
-
-    # counts = np.asarray(countDF,dtype=int)
         if replicate:
-            dds = edgeR.estimateGLMCommonDisp(dds, design)
-
-            dds = edgeR.estimateGLMTrendedDisp(dds, design)
-
-            dds = edgeR.estimateGLMTagwiseDisp(dds, design)
-
-            fit = edgeR.glmFit(dds, design)
+            dds = edgeR.estimateGLMCommonDisp(dds, design_mat)
+            dds = edgeR.estimateGLMTrendedDisp(dds, design_mat)
+            dds = edgeR.estimateGLMTagwiseDisp(dds, design_mat)
+            fit = edgeR.glmFit(dds, design_mat)
         else:
+            fit = edgeR.glmFit(dds, design_mat, dispersion=float(bcv**2))
 
-            fit = edgeR.glmFit(dds, design, dispersion=float(bcv**2))
-
-        for i in range(len(contrasts.T)):
-
-            lrt = edgeR.glmLRT(fit, contrast=contrasts.T[i])
-            
-            deg = edgeR.topTags(lrt,countDF.shape[0] )
-            
-            result=to_dataframe(deg)
+        for co in comb:
+            c1, c2, co_label = _split_contrast(co, levels)
+            contrast_vec = robjects.FloatVector(
+                [1.0 if lv == c1 else (-1.0 if lv == c2 else 0.0) for lv in level_names]
+            )
+            lrt = edgeR.glmLRT(fit, contrast=contrast_vec)
+            deg = edgeR.topTags(lrt, n=active_df.shape[0], sort_by="none")
+            result = to_dataframe(deg)
 
             with localconverter(robjects.default_converter + pandas2ri.converter + numpy2ri.converter):
-
                 result = robjects.conversion.rpy2py(result)
-            
-            result=pd.DataFrame(result)
 
+            result = pd.DataFrame(result, index=active_df.index).reindex(all_ids)
             result.columns = ['logFC','logCPM','LR','pvalue','FDR']
-
+            result['logFC'] = result['logFC'].fillna(0.0)
+            result['FDR'] = result['FDR'].fillna(1.0)
             result.reset_index(drop=True, inplace=True)
 
-            result.columns=[s+"("+combination[i]+")" for s in result.columns]  # Add combination names to the column names 
+            result.columns=[s+"("+co_label+")" for s in result.columns]  # Add combination names to the column names 
 
             edgeR_results.reset_index(drop=True, inplace=True)
 
@@ -373,7 +362,8 @@ def degFilter(degDF=None, CompareList=None, FDR=0.05, FOLD=2, plot=True, figsize
         
     for c in CompareList:
 
-        dk = degDF.filter(regex=c, axis=1)
+        suffix = f"({c})"
+        dk = degDF.loc[:, [col for col in degDF.columns if col.endswith(suffix)]]
 
         FDRR = "FDR("+c+")"
 

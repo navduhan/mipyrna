@@ -35,6 +35,7 @@ import pandas as pd
 
 from mipyrna import utility as mu
 from mipyrna.aligner import Bowtie_Aligner
+from mipyrna.novel import find_subseq
 
 
 class Quantifier:
@@ -69,18 +70,22 @@ class Quantifier:
                 hairpin = str(hairpin).upper().replace("U", "T")
                 mature = str(mature).upper().replace("U", "T")
                 pos = hairpin.find(mature)
+                if pos < 0:
+                    pos = find_subseq(hairpin, mature)
                 if pos < 0 or name in self.windows:
                     continue
                 self.windows[name] = (pos, pos + len(mature))
                 fh.write(f">{name}\n{hairpin}\n")
+        self.mirna_ids = list(self.windows)
 
-    def _align_reads_against_miRNAs(self, cpu, mem, output):
+    def _align_reads_against_miRNAs(self, cpu, mem, output, jobs=1):
         """Align the sample reads to the miRNA hairpins.
 
         Args:
             cpu (int): Threads for alignment.
             mem (int): Memory for alignment.
             output (str): Output directory for the index and alignments.
+            jobs (int): Samples aligned at once in local mode. Defaults to 1.
 
         Returns:
             dict: Sample name to ``[group, replicate, SAM path]``.
@@ -88,9 +93,9 @@ class Quantifier:
 
         config = str(ir.files("mipyrna").joinpath("param/bowtie_mirna.ini"))
         aln = Bowtie_Aligner(ref_genome=self.sRNA, configFile=config, outdir=output, slurm=self.slurm)
-        aln.build_index()
+        aln.build_index(cpu=cpu, mem=mem)
 
-        results = aln.run_alignment(samplesDict=self.samples, outType="SAM", cpu=cpu, mem=mem)
+        results = aln.run_alignment(samplesDict=self.samples, outType="SAM", cpu=cpu, mem=mem, jobs=jobs)
 
         return results
 
@@ -111,14 +116,18 @@ class Quantifier:
             hits = defaultdict(set)
             copies = {}
             for line in HTSeq.SAM_Reader(str(sample[2])):
-                if not line.aligned:
+                if not line.aligned or line.iv.chrom not in self.windows:
                     continue
                 mstart, mend = self.windows[line.iv.chrom]
                 if line.iv.start >= mstart - self.upstream and line.iv.end <= mend + self.downstream:
                     hits[line.read.name].add(line.iv.chrom)
-                    copies[line.read.name] = int(line.read.name.rsplit("_x", 1)[1])
+                    copies[line.read.name] = (
+                        int(line.read.name.rsplit("_x", 1)[1])
+                        if "_x" in line.read.name
+                        else 1
+                    )
 
-            totals = defaultdict(float)
+            totals = dict.fromkeys(self.mirna_ids, 0.0)
             for read, names in hits.items():
                 share = copies[read] / len(names) if self.weighted else copies[read]
                 for name in names:
@@ -129,20 +138,26 @@ class Quantifier:
 
         return all_counts
 
-    def quantify_expression(self, cpu=8, mem=20):
+    def quantify_expression(self, cpu=8, mem=20, jobs=1):
         """Align, count and write the merged raw count matrix to ``Raw_read_counts.xlsx``.
 
         Args:
             cpu (int): Threads for alignment. Defaults to 8.
             mem (int): Memory for alignment. Defaults to 20.
+            jobs (int): Samples aligned at once in local mode. Defaults to 1.
 
         Returns:
             pandas.DataFrame: Integer counts with a ``mature_id`` column and one column per sample.
         """
+        if not self.windows or not self.samples:
+            columns = ["mature_id", *(self.samples or {})]
+            empty_counts = pd.DataFrame(columns=columns)
+            empty_counts.to_excel(f"{self.outdir}/Raw_read_counts.xlsx", index=False)
+            return empty_counts
 
         aligdir = mu.make_directory(os.path.join(self.outdir, "quant_align"))
 
-        aligned_results = self._align_reads_against_miRNAs(cpu=cpu, mem=mem, output=aligdir)
+        aligned_results = self._align_reads_against_miRNAs(cpu=cpu, mem=mem, output=aligdir, jobs=jobs)
 
         sample_counts = self._get_counts(aligned_files=aligned_results)
 

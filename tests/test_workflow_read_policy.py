@@ -111,6 +111,67 @@ class WorkflowRfamWiringTests(unittest.TestCase):
                     self.assertIn("Rfam", table)
         mu.set_resume(False)
 
+    def test_rfam_stage_checkpoint_is_reused_on_resume(self):
+        with tempfile.TemporaryDirectory() as temp:
+            collapsed_fa = Path(temp) / "collapsed.fa"
+            mu.write_fasta([("s_1_x7", "ACGT")], str(collapsed_fa))
+            sam = Path(temp) / "reads.sam"
+            sam.write_text("")
+            samples = {"s": ["s", "group", str(collapsed_fa)]}
+            reads = pd.DataFrame({"read_name": ["s_1_x7"], "name": ["RF00001:5S_rRNA"], "reads": [7]})
+            predictor = Novel_miRNA()
+            out = Path(temp) / "out"
+            ref_text = ">rfam_1|RF00001:5S_rRNA\nACGT\n"
+
+            def discovery_results():
+                return pd.DataFrame(), pd.DataFrame(), None, None
+
+            for idx, resume in enumerate((False, True)):
+                with (
+                    patch("mipyrna.workflow.mu.read_input_file", return_value={
+                        "samples": samples, "combinations": [], "targets": pd.DataFrame(),
+                    }),
+                    patch("mipyrna.workflow.provenance", return_value={}),
+                    patch("mipyrna.workflow.set_log_file"),
+                    patch("mipyrna.workflow._write_collapsed_fasta", return_value=samples),
+                    patch("mipyrna.workflow.FilterRNAfamlies") as screen,
+                    patch("mipyrna.workflow.Bowtie_Aligner") as aligner,
+                    patch("mipyrna.workflow.Read_process") as reader,
+                    patch("mipyrna.workflow.Cluster_reads") as clusterer,
+                    patch("mipyrna.workflow.Novel_miRNA", return_value=predictor) as novel_cls,
+                    patch.object(predictor, "get_novel_miRNA", side_effect=discovery_results),
+                    patch("mipyrna.workflow.Quantifier") as quantifier,
+                    patch("mipyrna.workflow.runDESeq2") as deseq,
+                    patch("mipyrna.workflow.generate_report", return_value=("report.pdf", "metadata.json")),
+                ):
+                    def fake_align_rfam(*_args, **_kwargs):
+                        ref_fa = out / "2.Alignment/rfam/ncRNA_results/ncRNA_rfam.fa"
+                        ref_fa.parent.mkdir(parents=True, exist_ok=True)
+                        ref_fa.write_text(ref_text)
+                        screen.return_value.reference_info = {
+                            "release": "15.1",
+                            "fasta_sha256": mu.file_sha256(ref_fa),
+                        }
+                        return {"s": ["s", "group", reads]}, samples
+
+                    screen.return_value.align_rfam.side_effect = fake_align_rfam
+                    aligner.return_value.run_alignment.return_value = {"s": ["s", "group", str(sam)]}
+                    reader.return_value.aligned_reads.return_value = {}
+                    clusterer.return_value.get_clusters.return_value = {}
+                    quantifier.return_value.quantify_expression.return_value = pd.DataFrame(columns=["mature_id", "s"])
+                    run_workflow(
+                        "samples.txt", temp, "genome.fa", "ath", outdir=str(out),
+                        run_qc=False, run_trim=False, known_scan=False, rfam_filter=False,
+                        cpu=4, jobs=1, resume=resume,
+                    )
+                    if idx == 0:
+                        screen.return_value.align_rfam.assert_called_once()
+                    else:
+                        screen.return_value.align_rfam.assert_not_called()
+                        self.assertEqual(novel_cls.call_args.kwargs["rfam"], {"s": {"s_1_x7": {"RF00001:5S_rRNA"}}})
+                    deseq.assert_not_called()
+        mu.set_resume(False)
+
 
 if __name__ == "__main__":
     unittest.main()
