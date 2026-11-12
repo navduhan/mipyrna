@@ -15,7 +15,12 @@ from mipyrna.cli import build_parser
 from mipyrna.clustering import Cluster_reads
 from mipyrna.differential import _split_contrast
 from mipyrna.known_scan import KnownScan, drop_detected_novel, merge_known_calls
-from mipyrna.novel import Novel_miRNA
+from mipyrna.novel import (
+    Novel_miRNA,
+    _dinucleotide_shuffle,
+    check_mature_position,
+    estimate_star_sequence,
+)
 from mipyrna.reads import Read_process
 from mipyrna.rfamily import FilterRNAfamlies
 
@@ -313,6 +318,152 @@ class UtilityAndContrastTests(unittest.TestCase):
             self.assertEqual(reader.get_sequence((1, 0, 4, "+")), "ACGT")
             restored = pickle.loads(pickle.dumps(reader))
             self.assertEqual(restored.get_sequence(("1", 0, 4, "-")), "ACGT")
+
+
+class LiteratureBiogenesisTests(unittest.TestCase):
+    def test_single_variant_collapsed_stack_and_strand_separation(self):
+        rows = [
+            ("s_1_x250", "TGACAGAAGAGAGTGAGCACA", "1", "+", 100, 121, 21, "1", 250, 1),
+            ("s_2_x80", "TGTGCTCACTCTCTTCTGTCA", "1", "-", 105, 126, 21, "2", 80, 2),
+        ]
+        frame = pd.DataFrame(rows, columns=[
+            "read_name", "seq", "name", "strand", "start", "end", "length", "read_id", "reads", "align_id",
+        ])
+        _, out = Cluster_reads()._cluster_sample("s", ["s", "WT", frame])
+        clusts = out[3]
+        self.assertEqual(len(clusts), 2)
+        self.assertEqual(set(clusts["strand"]), {"+", "-"})
+        self.assertEqual(clusts["clust_size"].tolist(), [21, 21])
+        self.assertEqual(sorted(clusts["reads"].tolist()), [80, 250])
+
+    def test_duplex_check_and_two_nt_overhang_star_projection(self):
+        # Canonical uninterrupted stem-loop with 2-nt 3' overhangs on both arms:
+        # 5' flank (4 nt) + 21-nt 5p mature (19 bp + 2-nt 3' overhang) + 8-nt loop + 21-nt 3p star
+        stem_5p = "CTGACAGAAGAGAGTGAGC"  # 19 nt paired core
+        over_5p = "AC"
+        mature_5p = stem_5p + over_5p
+        comp = stem_5p[::-1].translate(str.maketrans("ACGT", "TGCA"))
+        star_3p = comp + "GT"  # 19 nt paired to stem_5p + 2-nt 3' overhang
+        precursor = "AAAA" + mature_5p + "TTTTAAAA" + star_3p + "TT"
+        self.assertEqual(check_mature_position(precursor, mature_5p), "ok")
+        self.assertEqual(check_mature_position(precursor, star_3p), "ok")
+        self.assertEqual(estimate_star_sequence(precursor, mature_5p), star_3p)
+        self.assertEqual(estimate_star_sequence(precursor, star_3p), mature_5p)
+        loop_span = precursor[18:39]
+        self.assertEqual(check_mature_position(precursor, loop_span), "mature in loop")
+
+    def test_dinucleotide_shuffle_preserves_exact_dinucleotides(self):
+        from collections import Counter
+
+        import numpy as np
+
+        rng = np.random.default_rng(7)
+        seq = "UGACAGAAGAGAGUGAGCACAUAAUGGCUAAAUUAGCUUGCTCACUGCUCUUUCUGUCAGA"
+        expected = Counter(zip(seq, seq[1:]))
+        for _ in range(50):
+            shuffled = _dinucleotide_shuffle(seq, rng)
+            self.assertEqual(Counter(zip(shuffled, shuffled[1:])), expected)
+            self.assertEqual((shuffled[0], shuffled[-1]), (seq[0], seq[-1]))
+
+    def test_hairpin_wide_star_and_precision_across_separated_arms(self):
+        stem_5p = "CTGACAGAAGAGAGTGAGC"
+        mature_5p = stem_5p + "AC"
+        star_3p = stem_5p[::-1].translate(str.maketrans("ACGT", "TGCA")) + "GT"
+        precursor = "AAAA" + mature_5p + "TTTTTTTTTTTT" + star_3p + "AAAA"
+        entry = {
+            "mature_check": "ok", "precursor": precursor, "precursor_length": len(precursor),
+            "start": 100, "end": 100 + len(precursor), "hairpin_start": 4,
+            "star": star_3p, "position": "5-prime",
+            "struct": "." * 4 + "(" * 19 + "." * 14 + ")" * 19 + "." * 6, "mfe": -32.0,
+        }
+        star_start = 100 + precursor.index(star_3p)
+        mature_cluster = pd.DataFrame([
+            ("r_m1_x40", mature_5p, "1", "+", 104, 125, 21, "1", 40, 1, 1),
+            ("r_m2_x10", mature_5p[:-1], "1", "+", 105, 125, 20, "2", 10, 2, 1),
+        ], columns=[
+            "read_name", "seq", "name", "strand", "start", "end", "length", "read_id", "reads", "align_id", "cluster",
+        ])
+        hairpin_reads = pd.DataFrame([
+            ("r_m1_x40", mature_5p, "1", "+", 104, 125, 21, "1", 40, 1),
+            ("r_m2_x10", mature_5p[:-1], "1", "+", 105, 125, 20, "2", 10, 2),
+            ("r_s1_x8", star_3p, "1", "+", star_start, star_start + 21, 21, "3", 8, 3),
+            ("r_deg_x2", "A" * 20, "1", "+", 126, 146, 20, "4", 2, 4),
+        ], columns=[
+            "read_name", "seq", "name", "strand", "start", "end", "length", "read_id", "reads", "align_id",
+        ])
+        predictor = Novel_miRNA()
+        with (
+            patch.object(Read_process, "get_sequence", return_value=precursor),
+            patch("mipyrna.novel.fold_hairpins", return_value=[entry]),
+            patch("mipyrna.novel.Precursor_Features") as features,
+        ):
+            features.return_value.generate_features.return_value = {"f": 1.0}
+            out = predictor.get_putative_precursor(mature_cluster, hairpin_reads=hairpin_reads)
+            assert out is not None
+            row = out.iloc[0]
+            self.assertEqual(row["star_reads"], 8)
+            self.assertAlmostEqual(row["five_prime_consistency"], 40 / 50)
+            self.assertAlmostEqual(row["inconsistent_fraction"], 2 / 60)
+
+    def test_known_survives_strict_without_star_while_novel_enforces_literature_rules(self):
+        predictor = Novel_miRNA(species="ath", species_type="plants", require_star=True)
+        pooled = pd.DataFrame([
+            {
+                "chrom": "1", "mature": "CTGACAGAAGAGAGTGAGCAC", "mature_length": 21,
+                "score": 0.92, "mature_check": "ok", "mature_reads": 30, "star_reads": 0,
+                "randfold_pvalue": 0.01, "inconsistent_fraction": 0.0,
+                "five_prime_consistency": 0.95, "heuristic_score": 2.5,
+            },
+            {
+                "chrom": "1", "mature": "CTGACAGAAGAGAGTGAGCAC", "mature_length": 21,
+                "score": 0.92, "mature_check": "ok", "mature_reads": 25, "star_reads": 6,
+                "randfold_pvalue": 0.01, "inconsistent_fraction": 0.05,
+                "five_prime_consistency": 0.90, "heuristic_score": 8.5,
+            },
+            {
+                "chrom": "2", "mature": "TTGGACTGAAGGGAGCTCCCT", "mature_length": 21,
+                "score": 0.88, "mature_check": "ok", "mature_reads": 40, "star_reads": 0,
+                "randfold_pvalue": 0.02, "inconsistent_fraction": 0.0,
+                "five_prime_consistency": 0.92, "heuristic_score": 2.0,
+            },
+        ])
+        dedup = predictor.filter_miRNA(pooled)
+        # Star-supported sample wins the tie on identical precursor score.
+        self.assertEqual(
+            int(dedup.loc[dedup["mature"] == "CTGACAGAAGAGAGTGAGCAC", "star_reads"].iloc[0]), 6
+        )
+        # Strict pre-BLAST filter keeps star-less candidates so known miRNAs are not lost.
+        strict = predictor.apply_strict_filters(dedup)
+        self.assertEqual(len(strict), 2)
+        # Post-BLAST novel Dicer filter enforces star support (and 24-nt plant star rule).
+        kept_novel = predictor._dicer_filter(strict)
+        self.assertEqual(kept_novel["mature"].tolist(), ["CTGACAGAAGAGAGTGAGCAC"])
+
+        relaxed = Novel_miRNA(species="ath", species_type="plants", require_star=False)
+        plant_24 = pd.DataFrame([
+            {
+                "mature": "A" * 24, "mature_length": 24, "star_reads": 0,
+                "inconsistent_fraction": 0.0, "five_prime_consistency": 0.9, "heuristic_score": 3.0,
+            },
+            {
+                "mature": "C" * 21, "mature_length": 21, "star_reads": 0,
+                "inconsistent_fraction": 0.0, "five_prime_consistency": 0.9, "heuristic_score": 3.0,
+            },
+        ])
+        self.assertEqual(relaxed._dicer_filter(plant_24)["mature"].tolist(), ["C" * 21])
+
+    def test_cli_literature_defaults_and_overrides(self):
+        default_args = build_parser().parse_args(["workflow"])
+        self.assertTrue(default_args.require_star)
+        self.assertEqual(default_args.read_cutoff, 20)
+        self.assertEqual(default_args.max_inconsistent, 0.25)
+        self.assertEqual(default_args.min_5p_consistency, 0.5)
+        no_star = build_parser().parse_args(["workflow", "--no-require-star"])
+        self.assertFalse(no_star.require_star)
+        ini_no_star = build_parser({"require_star": "false"}).parse_args(["workflow"])
+        self.assertFalse(ini_no_star.require_star)
+        ini_override = build_parser({"require_star": "false"}).parse_args(["workflow", "--require-star"])
+        self.assertTrue(ini_override.require_star)
 
 
 if __name__ == "__main__":

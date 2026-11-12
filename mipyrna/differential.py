@@ -27,26 +27,31 @@ Classes / Functions / Exceptions:
 """
 
 import logging
+from functools import cache
 from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from rpy2 import robjects
-from rpy2.rinterface_lib.callbacks import logger as rpy2_logger
-from rpy2.robjects import Formula, numpy2ri, pandas2ri
-from rpy2.robjects.conversion import get_conversion, localconverter, py2rpy
-from rpy2.robjects.packages import importr
 
 from mipyrna.logger import MiPyRNALogger
 
-rpy2_logger.setLevel(logging.ERROR)
-
 log = MiPyRNALogger(mode='a', log="diff")
 
-r: Any = robjects.r
 
-to_dataframe = r('function(x) data.frame(x)')
+@cache
+def _rpy2():
+    """Lazily initialize rpy2 so importing this module does not boot embedded R."""
+    from rpy2 import robjects
+    from rpy2.rinterface_lib.callbacks import logger as rpy2_logger
+    from rpy2.robjects import Formula, numpy2ri, pandas2ri
+    from rpy2.robjects.conversion import get_conversion, localconverter, py2rpy
+    from rpy2.robjects.packages import importr
+
+    rpy2_logger.setLevel(logging.ERROR)
+    r_env: Any = robjects.r
+    to_df = r_env('function(x) data.frame(x)')
+    return robjects, Formula, numpy2ri, pandas2ri, get_conversion, localconverter, py2rpy, importr, r_env, to_df
 
 
 def _split_contrast(co, levels=None):
@@ -115,6 +120,19 @@ def runDESeq2(countDF=None, targetFile=None, design='sample',combination=None,  
     """
     if countDF is None or targetFile is None or combination is None:
         raise ValueError("countDF, targetFile and combination are required")
+
+    (
+        robjects,
+        Formula,
+        numpy2ri,
+        pandas2ri,
+        get_conversion,
+        localconverter,
+        py2rpy,
+        importr,
+        _r,
+        to_dataframe,
+    ) = _rpy2()
 
     try:
         deseq = importr('DESeq2') if lib is None else importr('DESeq2', lib_loc=lib)
@@ -235,6 +253,19 @@ def run_edgeR(countDF=None, targetFile=None, combination=None,  mirna_column='ma
     """
     if countDF is None or targetFile is None or combination is None:
         raise ValueError("countDF, targetFile and combination are required")
+
+    (
+        robjects,
+        _Formula,
+        numpy2ri,
+        pandas2ri,
+        get_conversion,
+        localconverter,
+        py2rpy,
+        importr,
+        r,
+        to_dataframe,
+    ) = _rpy2()
 
     try:
         if lib is None:

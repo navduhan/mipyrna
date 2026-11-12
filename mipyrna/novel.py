@@ -69,6 +69,8 @@ _worker = None
 
 FLANKS = (5, 15, 30, 50)
 LOCAL_EXTENSION = 100
+MAX_DUPLEX_UNPAIRED = 5
+MAX_ASYMMETRIC_BULGE = 4
 
 
 def enclosing_pair(pt, i, j):
@@ -206,89 +208,226 @@ def find_subseq(seq, string):
     return find_close_match(seq, string)
 
 
-def check_mature_position(precursor, mature, bg=None):
+def check_mature_position(precursor, mature, bg=None, struct=None, start=None):
     """
-    Check where the mature sequence sits in the precursor structure.
+    Check whether the mature sequence forms a valid miRNA/miRNA* duplex in the precursor fold.
+
+    Enforces single-stem duplex criteria from published miRNA annotation guidelines:
+    the mature cannot fold onto itself or span a loop/multi-branch junction, at most
+    ``MAX_DUPLEX_UNPAIRED`` bases in the paired core (excluding the 2-nt 3' overhang) may
+    be unpaired, opposite-arm pairing must be monotonic without nested stems, asymmetric
+    bulges cannot exceed ``MAX_ASYMMETRIC_BULGE`` nt, and the terminal loop between arms
+    must be at least 3 nt.
 
     Args:
         precursor (str): Precursor sequence.
         mature (str): Mature sequence.
-        bg (forgi.graph.bulge_graph.BulgeGraph, optional): Bulge graph of the precursor fold; folded here if not given.
+        bg (forgi.graph.bulge_graph.BulgeGraph, optional): Bulge graph of the precursor fold.
+        struct (str, optional): Dot-bracket structure of the precursor; folded when omitted.
+        start (int, optional): 0-based start of the mature in ``precursor``.
 
     Returns:
-        str or None: "ok", or the reason the check fails (e.g. "mature in loop"); None if no bulge graph is available.
+        str: ``"ok"`` or the reason the check fails.
     """
 
-    if bg is None:
-        bg = bulge_graph(precursor)
-    start = find_subseq(precursor, mature) + 1
-    end = start + len(mature)
-    loops = list(bg.hloop_iterator())
-    if len(loops) == 0:
-        return "too many loops"
-    l = next(iter(bg.define_range_iterator("h0")))
-    if (start < l[0] and end > l[0]) or (start < l[1] and end > l[1]):
-        return "mature in loop"
-    p = next(iter(bg.stem_bp_iterator("s0")))
-
-    if start == 0:
+    pos = start
+    if pos is None:
+        pos = precursor.find(mature)
+        if pos < 0:
+            pos = find_subseq(precursor, mature)
+    if pos < 0:
         return "mature not found"
-    if end > p[1] + 2:
+    if pos + len(mature) > len(precursor):
         return "3p mature outside"
-    if p[0] > start + 2:
+    if struct is None:
+        if bg is not None:
+            struct = bg.to_dotbracket_string()
+        else:
+            struct, _ = fold_precursor(precursor.replace("T", "U"))
+    pt = RNA.ptable(struct)
+    m5 = pos + 1
+    m3 = pos + len(mature)
+    if any(m5 <= pt[k] <= m3 for k in range(m5, m3 + 1) if pt[k] != 0):
+        return "mature in loop"
+    down = [(k, pt[k]) for k in range(m5, m3 + 1) if pt[k] > m3]
+    up = [(k, pt[k]) for k in range(m5, m3 + 1) if 0 < pt[k] < m5]
+    if down and up:
+        return "mature in loop"
+    side = down or up
+    if not side:
         return "mature unpaired"
+    m3_core = max(m5, m3 - 2)
+    core_len = m3_core - m5 + 1
+    core_paired = sum(1 for k, _ in side if k <= m3_core)
+    if core_len - core_paired > MAX_DUPLEX_UNPAIRED:
+        return "mature unpaired"
+    for (k1, p1), (k2, p2) in zip(side, side[1:]):
+        if p1 <= p2:
+            return "too many loops"
+        if abs((k2 - k1) - (p1 - p2)) > MAX_ASYMMETRIC_BULGE:
+            return "asymmetric bulge"
+        if any(p2 < q < pt[q] < p1 for q in range(p2 + 1, p1) if pt[q] != 0):
+            return "too many loops"
+    if down:
+        if side[-1][1] - m3 < 3:
+            return "mature in loop"
+        s3 = side[0][1] + (side[0][0] - m5) + 2
+        if s3 > len(precursor) + 2:
+            return "3p mature outside"
+    else:
+        if m5 - side[0][1] < 3:
+            return "mature in loop"
     return "ok"
 
 
-def estimate_star_sequence(precursor, mature, bg=None):
+def estimate_star_sequence(precursor, mature, bg=None, struct=None, start=None):
     """
-    Estimate the star sequence from a given mature and precursor.
+    Estimate the miRNA* (star) sequence on the opposite arm with a 2-nt 3' overhang.
 
     Args:
         precursor (str): Precursor sequence.
         mature (str): Mature sequence.
-        bg (forgi.graph.bulge_graph.BulgeGraph, optional): Bulge graph of the precursor fold; folded here if not given.
+        bg (forgi.graph.bulge_graph.BulgeGraph, optional): Bulge graph of the precursor fold.
+        struct (str, optional): Dot-bracket structure of the precursor; folded when omitted.
+        start (int, optional): 0-based start of the mature in ``precursor``.
 
     Returns:
         str or None: Estimated star sequence, or None if it cannot be determined.
     """
 
-    if bg is None:
-        bg = bulge_graph(precursor)
-    start = find_subseq(precursor, mature) + 1
+    pos = start
+    if pos is None:
+        pos = precursor.find(mature)
+        if pos < 0:
+            pos = find_subseq(precursor, mature)
+    if pos < 0 or pos + len(mature) > len(precursor):
+        return None
+    if struct is None:
+        if bg is not None:
+            struct = bg.to_dotbracket_string()
+        else:
+            struct, _ = fold_precursor(precursor.replace("T", "U"))
+    pt = RNA.ptable(struct)
+    m5 = pos + 1
+    m3 = pos + len(mature)
+    pairs = [(k, pt[k]) for k in range(m5, m3 + 1) if pt[k] != 0 and not (m5 <= pt[k] <= m3)]
+    if not pairs:
+        return None
+    down = [(k, p) for k, p in pairs if p > m3]
+    up = [(k, p) for k, p in pairs if p < m5]
+    side = down if len(down) >= len(up) else up
+    if not side:
+        return None
+    k5, p5 = side[0]
+    m3_core = max(m5, m3 - 2)
+    k3, p3 = min(side, key=lambda item: abs(item[0] - m3_core))
+    s3 = p5 + (k5 - m5) + 2
+    s5 = p3 - (m3_core - k3)
+    s5 = max(1, s5)
+    s3 = min(len(precursor), s3)
+    if s3 - s5 + 1 < 15 or s3 - s5 + 1 > 30:
+        return None
+    if not (s3 <= pos or s5 - 1 >= pos + len(mature)):
+        return None
+    return precursor[s5 - 1 : s3]
 
-    for p in bg.adjacent_stem_pairs_iterator():
-        pp = [p[0], p[2]]
-        for s in pp:
-            xx = list(bg.stem_bp_iterator(s))
-            for i in xx:
-                if start == i[0]:
-                    star = precursor[i[1] - len(mature) + 2 : i[1] + 2]
-                    return star
-                elif start == i[1]:
-                    star = precursor[i[0] - len(mature) + 1 : i[0] + 2]
-                    return star
-    return
 
-
-def safe_star_sequence(precursor, mature, bg=None):
+def safe_star_sequence(precursor, mature, bg=None, struct=None, start=None):
     """
     Estimate a star sequence and return None when it cannot be determined.
 
     Args:
         precursor (str): Precursor sequence.
         mature (str): Mature sequence.
-        bg (forgi.graph.bulge_graph.BulgeGraph, optional): Bulge graph of the precursor fold; folded here if not given.
+        bg (forgi.graph.bulge_graph.BulgeGraph, optional): Bulge graph of the precursor fold.
+        struct (str, optional): Dot-bracket structure of the precursor.
+        start (int, optional): 0-based start of the mature in ``precursor``.
 
     Returns:
         str or None: Estimated star sequence, or None if the fold does not allow one.
     """
 
     try:
-        return estimate_star_sequence(precursor, mature, bg)
+        return estimate_star_sequence(precursor, mature, bg=bg, struct=struct, start=start)
     except (TypeError, ValueError, RuntimeError, StopIteration) as exc:
         log.debug(f"Could not estimate a star sequence: {exc}")
         return None
+
+
+def _dinucleotide_shuffle(seq, rng):
+    """
+    Shuffle an RNA sequence while preserving exact dinucleotide counts and endpoints.
+
+    Uses the Altschul-Erickson Eulerian trail construction with a uniform spanning
+    arborescence sampled by loop-erased random walk (Bonnet et al., 2004).
+
+    Args:
+        seq (str): Input sequence.
+        rng (numpy.random.Generator): Random number generator.
+
+    Returns:
+        str: Shuffled sequence with identical dinucleotide counts.
+    """
+
+    if len(seq) <= 2:
+        return seq
+    alpha = list(dict.fromkeys(seq))
+    if len(alpha) == 1:
+        return seq
+    last = seq[-1]
+    adj = {u: [] for u in alpha}
+    for a, b in zip(seq, seq[1:]):
+        adj[a].append(b)
+    non_root = [u for u in alpha if u != last and adj[u]]
+    in_tree = {last}
+    last_edges = {}
+    ok = True
+    for u in non_root:
+        if u in in_tree:
+            continue
+        path = {}
+        cur = u
+        for _ in range(512):
+            nxt = adj[cur][int(rng.integers(len(adj[cur])))]
+            path[cur] = nxt
+            cur = nxt
+            if cur in in_tree:
+                break
+        else:
+            ok = False
+            break
+        cur = u
+        while cur not in in_tree:
+            in_tree.add(cur)
+            last_edges[cur] = path[cur]
+            cur = path[cur]
+    if not ok:
+        last_edges = {}
+        for a, b in zip(seq, seq[1:]):
+            if a != last:
+                last_edges[a] = b
+
+    out_lists = {}
+    for u in alpha:
+        items = list(adj[u])
+        if u in last_edges:
+            idx = items.index(last_edges[u])
+            chosen = items.pop(idx)
+            rng.shuffle(items)
+            items.append(chosen)
+        else:
+            rng.shuffle(items)
+        out_lists[u] = items
+
+    pos_idx = dict.fromkeys(alpha, 0)
+    res = [seq[0]]
+    cur = seq[0]
+    for _ in range(len(seq) - 1):
+        nxt = out_lists[cur][pos_idx[cur]]
+        pos_idx[cur] += 1
+        res.append(nxt)
+        cur = nxt
+    return "".join(res)
 
 
 def describe_precursor(precursor, mature, start=None, max_length=None):
@@ -310,13 +449,17 @@ def describe_precursor(precursor, mature, start=None, max_length=None):
 
     rna = precursor.replace("T", "U")
     struct, mfe = fold_precursor(rna)
-    bg = fgb.BulgeGraph.from_dotbracket(struct, rna)
-    check = check_mature_position(precursor, mature, bg)
-    pos = find_subseq(precursor, mature) if start is None else start
+    if start is None:
+        pos = precursor.find(mature)
+        if pos < 0:
+            pos = find_subseq(precursor, mature)
+    else:
+        pos = start
+    check = check_mature_position(precursor, mature, struct=struct, start=pos)
     span = max_length or len(precursor)
     centre = pos + len(mature) // 2 + 1
     pt = RNA.ptable(struct)
-    paired = [k for k in range(pos + 1, pos + len(mature) + 1) if pt[k] != 0]
+    paired = [k for k in range(pos + 1, pos + len(mature) + 1) if 1 <= k < len(pt) and pt[k] != 0]
     if paired:
         i, j = stem_loop(pt, min(paired, key=lambda k: abs(k - centre)), span)
     else:
@@ -327,7 +470,7 @@ def describe_precursor(precursor, mature, start=None, max_length=None):
         "mfe": mfe,
         "mature_check": check,
         "position": "5-prime" if centre < (i + j) / 2 else "3-prime",
-        "star": safe_star_sequence(precursor, mature, bg),
+        "star": safe_star_sequence(precursor, mature, struct=struct, start=pos),
     }
 
 
@@ -464,7 +607,7 @@ class Novel_miRNA:
         self,
         samples=None,
         genome=None,
-        read_cutoff=50,
+        read_cutoff=20,
         cluster_cutoff=28,
         max_extension=260,
         species=None,
@@ -476,8 +619,9 @@ class Novel_miRNA:
         randfold_pvalue_cutoff=0.05,
         min_mature_reads=10,
         min_star_reads=1,
-        require_star=False,
-        max_inconsistent=0.1,
+        require_star=True,
+        max_inconsistent=0.25,
+        min_5p_consistency=0.5,
         min_novel_score=1.0,
         random_seed=42,
         workers=1,
@@ -486,6 +630,7 @@ class Novel_miRNA:
         slurm=False,
         mem=None,
         rfam=None,
+        aligned_reads=None,
     ):
         """
         Initialize the novel miRNA predictor.
@@ -493,7 +638,7 @@ class Novel_miRNA:
         Args:
             samples (dict, optional): Sample name mapped to sample information (name at index 0, reads at 2, clusters at 3).
             genome (str, optional): Reference genome FASTA path.
-            read_cutoff (int): Minimum reads of a cluster or mature candidate. Defaults to 50.
+            read_cutoff (int): Minimum reads of a cluster or mature candidate. Defaults to 20.
             cluster_cutoff (int): Cluster size below which the whole cluster is the mature. Defaults to 28.
             max_extension (int): Nucleotides folded on each side of the mature to find its stem-loop. Defaults to 260.
             species (str, optional): miRBase species code.
@@ -505,8 +650,9 @@ class Novel_miRNA:
             randfold_pvalue_cutoff (float): Maximum randfold p-value. Defaults to 0.05.
             min_mature_reads (int): Minimum mature reads in strict mode. Defaults to 10.
             min_star_reads (int): Minimum star reads when a star is required. Defaults to 1.
-            require_star (bool): Require star reads in strict mode. Defaults to False.
-            max_inconsistent (float): Maximum fraction of the reads on a novel hairpin outside the mature and star positions. Defaults to 0.1.
+            require_star (bool): Require star reads on novel miRNA candidates. Defaults to True.
+            max_inconsistent (float): Maximum fraction of the reads on a novel hairpin outside the mature and star positions. Defaults to 0.25.
+            min_5p_consistency (float): Minimum share of mature-locus reads starting at the modal 5-prime position for novel miRNAs. Defaults to 0.5.
             min_novel_score (float): Minimum heuristic score of a novel miRNA. Defaults to 1.0.
             random_seed (int): Seed for shuffling. Defaults to 42.
             workers (int): Processes for scoring clusters. Defaults to 1.
@@ -516,6 +662,8 @@ class Novel_miRNA:
             mem (int, optional): Memory in GB of each Slurm job. Defaults to the cluster setting.
             rfam (dict, optional): Sample name to a dictionary of read name to the set of Rfam
                 sequences the read matched. Defaults to None.
+            aligned_reads (dict, optional): Sample name to ``[group, replicate, aligned reads DataFrame]``
+                used for hairpin-wide star and Dicer-precision counting. Defaults to None.
         """
 
         self.genome = genome
@@ -525,6 +673,7 @@ class Novel_miRNA:
         self.species_type = species_type
         self.outdir = outdir
         self.samples = samples
+        self.aligned_reads = aligned_reads
         self.max_extension = max_extension
         self.filterCriteria = filter_criteria
         self.score = score
@@ -534,6 +683,7 @@ class Novel_miRNA:
         self.min_star_reads = min_star_reads
         self.require_star = require_star
         self.max_inconsistent = max_inconsistent
+        self.min_5p_consistency = min_5p_consistency
         self.min_novel_score = min_novel_score
         self.random_seed = random_seed
         self.workers = workers
@@ -636,13 +786,14 @@ class Novel_miRNA:
 
     def estimate_randfold_pvalue(self, precursor):
         """
-        Approximate randfold significance via shuffled-sequence minimum free energies.
+        Estimate randfold significance via dinucleotide-shuffled minimum free energies.
 
         Args:
             precursor (str): Precursor sequence.
 
         Returns:
-            float: Smoothed p-value, the share of shuffles with an MFE as low as the observed one; 1.0 for an empty precursor.
+            float: Smoothed p-value, the share of dinucleotide shuffles with an MFE as low as
+            the observed one; 1.0 for an empty precursor.
         """
         if not precursor:
             return 1.0
@@ -650,7 +801,7 @@ class Novel_miRNA:
         _, observed_mfe = RNA.fold(seq)
         better_or_equal = 0
         for _ in range(self.randfold_iterations):
-            shuffled = "".join(self.rng.permutation(list(seq)))
+            shuffled = _dinucleotide_shuffle(seq, self.rng)
             _, shuffled_mfe = RNA.fold(shuffled)
             if shuffled_mfe <= observed_mfe:
                 better_or_equal += 1
@@ -703,7 +854,7 @@ class Novel_miRNA:
 
         return pd.DataFrame({"miRNA": prob, "Non-miRNA": 1.0 - prob})
 
-    def get_putative_precursor(self, filtered_cluster=None, other=None, rfam=None):
+    def get_putative_precursor(self, filtered_cluster=None, other=None, rfam=None, hairpin_reads=None):
         """
         Extract and score the candidate hairpins of one read cluster.
 
@@ -714,9 +865,13 @@ class Novel_miRNA:
 
         Args:
             filtered_cluster (pandas.DataFrame): Reads of the mature cluster.
-            other (pandas.DataFrame, optional): Remaining cluster reads used to count star reads.
+            other (pandas.DataFrame, optional): Remaining cluster reads used when
+                ``hairpin_reads`` is not provided.
             rfam (dict, optional): Read name to the set of Rfam sequences the read matched.
                 Defaults to None.
+            hairpin_reads (pandas.DataFrame, optional): All aligned reads near the locus on
+                the same chromosome and strand, used for hairpin-wide star and Dicer-precision
+                counting across separated 5p and 3p arms. Defaults to None.
 
         Returns:
             pandas.DataFrame or None: Candidate hairpins, or None if no valid candidate was found.
@@ -738,7 +893,15 @@ class Novel_miRNA:
         if mature is None:
             mature = x.seq
         seqlen = len(mature)
-        maturecounts = filtered_cluster.reads.sum()
+        dedup_cols = [c for c in ("read_name", "start", "end") if c in filtered_cluster.columns]
+        clean_cluster = filtered_cluster.drop_duplicates(dedup_cols) if dedup_cols else filtered_cluster
+        maturecounts = clean_cluster.reads.sum()
+        five_prime_col = "start" if strand == "+" else "end"
+        cluster_consistency = (
+            float(clean_cluster.groupby(five_prime_col)["reads"].sum().max() / maturecounts)
+            if maturecounts > 0
+            else 0.0
+        )
         rfam = rfam or {}
         if rfam:
             hits = filtered_cluster[filtered_cluster["read_name"].isin(rfam)].drop_duplicates("read_name")
@@ -761,20 +924,73 @@ class Novel_miRNA:
                 continue
 
             pstart, pend = entry["start"], entry["end"]
+            hstart = entry.get("hairpin_start")
+            if hstart is None:
+                found_pos = entry["precursor"].find(mature)
+                if found_pos < 0:
+                    found_pos = self.find_subseq(entry["precursor"], mature)
+                hstart = found_pos if found_pos >= 0 else None
+            if hstart is not None:
+                m_gstart = pstart + hstart if strand == "+" else pend - hstart - seqlen
+            else:
+                m_gstart = start
+            m_gend = m_gstart + seqlen
+
             star = entry["star"]
+            s_pos = -1
+            if isinstance(star, str) and star:
+                s_pos = entry["precursor"].find(star)
+                if s_pos < 0:
+                    s_pos = self.find_subseq(entry["precursor"], star)
+
             starcount = 0
             inconsistent = 0.0
-            if other is not None and star is not None:
-                s = self.find_subseq(entry["precursor"], star)
-                if s >= 0:
-                    ss = pstart + s if strand == "+" else pend - s - len(star)
-                    sreads = other[
-                        (other.start >= ss - 2) & (other.end <= ss + len(star) + 3)
-                    ]
+            consistency = cluster_consistency
+            if hairpin_reads is not None and len(hairpin_reads):
+                hp = hairpin_reads[(hairpin_reads.start >= pstart) & (hairpin_reads.end <= pend)]
+                if len(hp):
+                    hp_cols = [c for c in ("read_name", "start", "end") if c in hp.columns]
+                    if hp_cols:
+                        hp = hp.drop_duplicates(hp_cols)
+                    if strand == "+":
+                        mature_mask = (abs(hp.start - m_gstart) <= 2) & (abs(hp.end - m_gend) <= 4)
+                    else:
+                        mature_mask = (abs(hp.end - m_gend) <= 2) & (abs(hp.start - m_gstart) <= 4)
+                    m_sub = hp.loc[mature_mask]
+                    m_locus_reads = m_sub.reads.sum()
+                    if m_locus_reads > 0:
+                        consistency = float(
+                            m_sub.groupby(five_prime_col)["reads"].sum().max() / m_locus_reads
+                        )
+                    if s_pos >= 0 and star is not None:
+                        ss = pstart + s_pos if strand == "+" else pend - s_pos - len(star)
+                        se = ss + len(star)
+                        if strand == "+":
+                            raw_star = (abs(hp.start - ss) <= 3) & (abs(hp.end - se) <= 4)
+                        else:
+                            raw_star = (abs(hp.end - se) <= 3) & (abs(hp.start - ss) <= 4)
+                        star_mask = raw_star & (~mature_mask)
+                        starcount = hp.loc[star_mask, "reads"].sum()
+                    else:
+                        star_mask = pd.Series(False, index=hp.index)
+                    total_hp = hp.reads.sum()
+                    if total_hp > 0:
+                        inconsistent = float(
+                            hp.loc[~(mature_mask | star_mask), "reads"].sum() / total_hp
+                        )
+            elif other is not None:
+                if s_pos >= 0 and star is not None:
+                    ss = pstart + s_pos if strand == "+" else pend - s_pos - len(star)
+                    se = ss + len(star)
+                    if strand == "+":
+                        sreads = other[(abs(other.start - ss) <= 3) & (abs(other.end - se) <= 4)]
+                    else:
+                        sreads = other[(abs(other.end - se) <= 3) & (abs(other.start - ss) <= 4)]
                     starcount = sreads.reads.sum()
-            if other is not None:
                 on_hairpin = other[(other.start >= pstart) & (other.end <= pend)].reads.sum()
-                inconsistent = max(0, on_hairpin - starcount) / (maturecounts + on_hairpin)
+                denom = maturecounts + on_hairpin
+                inconsistent = max(0.0, float(on_hairpin - starcount)) / denom if denom > 0 else 0.0
+
             putative_precursor.append(
                 {
                     "chrom": chrom,
@@ -784,7 +1000,7 @@ class Novel_miRNA:
                     "precursor_length": entry["precursor_length"],
                     "start": pstart,
                     "end": pend,
-                    "mature_start": start,
+                    "mature_start": m_gstart,
                     "strand": strand,
                     "struct": entry["struct"],
                     "mfe": entry["mfe"],
@@ -794,6 +1010,7 @@ class Novel_miRNA:
                     "position": entry["position"],
                     "star_reads": starcount,
                     "inconsistent_fraction": inconsistent,
+                    "five_prime_consistency": consistency,
                     "star": star,
                     "randfold_pvalue": 1.0,
                     "cluster": x.cluster,
@@ -808,7 +1025,11 @@ class Novel_miRNA:
 
     def filter_miRNA(self, df):
         """
-        Keep the best-scoring precursor per mature sequence and assign novel IDs.
+        Keep the best-supported precursor per mature sequence and assign novel IDs.
+
+        Across samples and candidate flanks, valid precursors with star-strand support
+        take precedence over star-less observations, followed by model score, heuristic
+        score and mature read depth.
 
         Args:
             df (pandas.DataFrame): Scored candidates with "mature" and "score" columns.
@@ -816,8 +1037,26 @@ class Novel_miRNA:
         Returns:
             pandas.DataFrame: One row per mature sequence, with a Novel_ID column.
         """
-        # Keep the single best-scoring precursor per mature sequence.
-        idx = df.groupby("mature")["score"].idxmax().tolist()
+        valid = (df["score"] >= self.score)
+        if "mature_check" in df.columns:
+            valid = valid & (df["mature_check"] == "ok")
+        has_star = (
+            df["star_reads"] >= self.min_star_reads
+            if "star_reads" in df.columns
+            else pd.Series(False, index=df.index)
+        )
+        sort_cols = ["_valid", "_has_star", "score"]
+        for extra in ("heuristic_score", "mature_reads"):
+            if extra in df.columns:
+                sort_cols.append(extra)
+        ranked = df.assign(_valid=valid, _has_star=has_star).sort_values(
+            sort_cols, ascending=False, kind="mergesort"
+        )
+        idx = (
+            ranked.drop_duplicates(subset=["mature"], keep="first")
+            .sort_values("mature", kind="mergesort")
+            .index.tolist()
+        )
         final_miRNAs = df.loc[idx].reset_index(drop=True)
 
         with contextlib.suppress(Exception):
@@ -830,13 +1069,17 @@ class Novel_miRNA:
 
     def apply_strict_filters(self, df):
         """
-        Apply the structure, score, read count and randfold filters.
+        Apply the structure, score, read count and randfold filters prior to known/novel split.
+
+        Star-strand and Dicer-precision rules are enforced downstream in :meth:`_dicer_filter`
+        on novel candidates only, so BLAST-confirmed known miRNAs without star reads are
+        retained.
 
         Args:
             df (pandas.DataFrame): Candidate miRNAs.
 
         Returns:
-            pandas.DataFrame: Candidates passing all filters (and the star read minimum if required).
+            pandas.DataFrame: Candidates passing structure, score, mature read and randfold checks.
         """
         mask = (
             (df["mature_check"] == "ok")
@@ -844,8 +1087,6 @@ class Novel_miRNA:
             & (df["mature_reads"] >= self.min_mature_reads)
             & (df["randfold_pvalue"] <= self.randfold_pvalue_cutoff)
         )
-        if self.require_star:
-            mask = mask & (df["star_reads"] >= self.min_star_reads)
         return df[mask].copy()
 
     @staticmethod
@@ -896,20 +1137,39 @@ class Novel_miRNA:
         return novel_df[keep]
 
     def _dicer_filter(self, df):
-        """Remove novel candidates whose reads do not look like Dicer products.
+        """Remove novel candidates whose reads do not meet published Dicer biogenesis criteria.
 
-        A candidate is dropped when more than ``max_inconsistent`` of the reads on its
-        hairpin fall outside the mature and star positions, or when its heuristic score
-        is below ``min_novel_score``.
+        Enforces hairpin-wide Dicer precision (``inconsistent_fraction <= max_inconsistent``,
+        Axtell & Meyers 2018), 5-prime cleavage homogeneity (``five_prime_consistency >= min_5p_consistency``),
+        heuristic score, kingdom mature length bounds, star-strand read support when
+        ``require_star`` is enabled, and mandatory star reads for 23-24 nt plant candidates
+        to exclude heterochromatic siRNAs.
 
         Args:
             df (pandas.DataFrame): Novel candidates.
 
         Returns:
-            pandas.DataFrame: Candidates with Dicer-like reads.
+            pandas.DataFrame: Candidates passing Dicer biogenesis checks.
         """
-        keep = (df["inconsistent_fraction"] <= self.max_inconsistent) & (df["heuristic_score"] >= self.min_novel_score)
-        log.info(f"Removed {int((~keep).sum())} novel candidates with inconsistent reads or a low heuristic score")
+        if df.empty:
+            return df
+        keep = (df["inconsistent_fraction"] <= self.max_inconsistent) & (
+            df["heuristic_score"] >= self.min_novel_score
+        )
+        if "five_prime_consistency" in df.columns:
+            keep = keep & (df["five_prime_consistency"] >= self.min_5p_consistency)
+        if self.require_star:
+            keep = keep & (df["star_reads"] >= self.min_star_reads)
+        if "mature_length" in df.columns:
+            if self.species_type == "plants":
+                keep = keep & df["mature_length"].between(20, 24)
+                hc_len = df["mature_length"].isin((23, 24))
+                keep = keep & (~hc_len | (df["star_reads"] >= max(1, self.min_star_reads)))
+            elif self.species_type == "animals":
+                keep = keep & df["mature_length"].between(18, 25)
+        log.info(
+            f"Removed {int((~keep).sum())} novel candidates failing Dicer precision, 5' consistency, star or score checks"
+        )
         return df[keep]
 
     def _one_per_locus(self, df):
@@ -1140,46 +1400,84 @@ class Novel_miRNA:
         Extract and score the candidate precursors of one read cluster.
 
         Args:
-            task (tuple): (cluster ID, cluster size, cluster reads DataFrame, sample name).
+            task (tuple): ``(cluster ID, cluster size, cluster reads DataFrame, sample name)``
+                optionally followed by ``local_reads`` DataFrame for hairpin-wide counting.
 
         Returns:
             pandas.DataFrame or None: Candidate precursors, or None if the cluster has too few reads.
         """
-        cluster_id, clust_size, df, name = task
+        if len(task) == 5:
+            cluster_id, clust_size, df, name, local_reads = task
+        else:
+            cluster_id, clust_size, df, name = task
+            local_reads = None
         self.rng = np.random.default_rng([self.random_seed, int(cluster_id)])
         rfam = self.rfam.get(name, {})
         df = df.sort_values("reads", ascending=False, kind="mergesort")
         if clust_size < self.clusterCutoff:
             df["mature"] = True
+            if local_reads is not None:
+                return self.get_putative_precursor(
+                    filtered_cluster=df, rfam=rfam, hairpin_reads=local_reads
+                )
             return self.get_putative_precursor(filtered_cluster=df, rfam=rfam)
         anchor = df.iloc[0]
         mm = df.loc[
             (abs(df.start - anchor.start) <= 3) & (abs(df.end - anchor.end) <= 5)
         ].copy()
-        if mm.reads.sum() <= self.readsCutoff:
+        if mm.reads.sum() < self.readsCutoff:
             return None
         mm["mature"] = True
         other = df.loc[~df.index.isin(mm.index)].copy()
         other["mature"] = False
+        if local_reads is not None:
+            return self.get_putative_precursor(
+                filtered_cluster=mm, other=other, rfam=rfam, hairpin_reads=local_reads
+            )
         return self.get_putative_precursor(filtered_cluster=mm, other=other, rfam=rfam)
 
-    def _score_sample(self, sample):
+    def _score_sample(self, sample, all_reads=None):
         """
         Score the candidate precursors of all read clusters of one sample.
 
         Args:
             sample (list): Sample information (name at index 0, reads at 2, clusters at 3).
+            all_reads (pandas.DataFrame, optional): Unfiltered genome-aligned reads of the
+                sample for hairpin-wide star and Dicer-precision counting.
 
         Returns:
             list: Non-empty candidate precursor DataFrames, one per scored cluster.
         """
         clusts = sample[3][sample[3].reads >= self.readsCutoff]
         groups = dict(tuple(sample[2].groupby("cluster")))
-        tasks = [
-            (c.cluster, c.clust_size, groups[c.cluster], sample[0])
-            for _i, c in clusts.iterrows()
-            if c.cluster in groups
-        ]
+        if all_reads is None and self.aligned_reads and sample[0] in self.aligned_reads:
+            all_reads = self.aligned_reads[sample[0]][2]
+        if all_reads is None:
+            all_reads = sample[2]
+        by_locus = {}
+        if all_reads is not None and len(all_reads):
+            for (chrom, strand), sub in all_reads.groupby(["name", "strand"], sort=False):
+                ordered = sub.sort_values("start", kind="mergesort")
+                by_locus[(str(chrom), str(strand))] = (ordered, ordered["start"].to_numpy())
+
+        pad = self.max_extension + 10
+        tasks = []
+        for _i, c in clusts.iterrows():
+            if c.cluster not in groups:
+                continue
+            entry = by_locus.get((str(c["name"]), str(c.strand)))
+            if entry is not None:
+                ordered, starts = entry
+                win_start = max(0, int(c.start) - pad)
+                win_end = int(c.end) + pad
+                lo = int(np.searchsorted(starts, max(0, win_start - 40), side="left"))
+                hi = int(np.searchsorted(starts, win_end, side="right"))
+                sub = ordered.iloc[lo:hi]
+                local_reads = sub[(sub.end > win_start) & (sub.start < win_end)]
+            else:
+                local_reads = groups[c.cluster]
+            tasks.append((c.cluster, c.clust_size, groups[c.cluster], sample[0], local_reads))
+
         log.info(
             f"Scoring {len(tasks)} clusters of sample {sample[0]} with {self.workers} worker(s)"
         )
@@ -1224,11 +1522,13 @@ class Novel_miRNA:
             if self.workers * self.jobs <= 1 or len(tasks) < 2:
                 light = copy.copy(self)
                 light.samples = None
+                light.aligned_reads = None
                 _init_worker(light)
                 pvalues = [_run_randfold(t) for t in tasks]
             else:
                 light = copy.copy(self)
                 light.samples = None
+                light.aligned_reads = None
                 with multiprocessing.Pool(
                     self.workers * self.jobs, _init_worker, (light,)
                 ) as pool:
@@ -1252,7 +1552,7 @@ class Novel_miRNA:
         Progress is logged about every 5% of the clusters.
 
         Args:
-            tasks (list): Cluster tasks of (cluster ID, cluster size, reads DataFrame, sample name).
+            tasks (list): Cluster tasks of (cluster ID, cluster size, reads DataFrame, sample name[, local_reads]).
             name (str): Sample name used in the progress messages. Defaults to "Clusters".
 
         Returns:
@@ -1273,6 +1573,7 @@ class Novel_miRNA:
             return results
         light = copy.copy(self)
         light.samples = None
+        light.aligned_reads = None
         chunk = max(1, min(10, total // (self.workers * 8)))
         with multiprocessing.Pool(self.workers, _init_worker, (light,)) as pool:
             collect(pool.imap(_run_task, tasks, chunksize=chunk))
@@ -1308,13 +1609,14 @@ class Novel_miRNA:
         final_data.to_pickle(cache + ".tmp")
         os.replace(cache + ".tmp", cache)
 
-    def _score_one(self, sample):
+    def _score_one(self, sample, all_reads=None):
         """Score one sample from start to finish; run by one element of a Slurm job array.
 
         Args:
             sample (list): Sample information (name at index 0, reads at 2, clusters at 3).
+            all_reads (pandas.DataFrame, optional): Unfiltered genome-aligned reads of the sample.
         """
-        candidates = self._score_sample(sample)
+        candidates = self._score_sample(sample, all_reads=all_reads)
         if candidates:
             self._finish_sample(sample[0], candidates)
 
@@ -1326,10 +1628,19 @@ class Novel_miRNA:
         """
         light = copy.copy(self)
         light.samples = None
+        light.aligned_reads = None
         light.jobs = 1
         light.slurm = False
+        aligned = self.aligned_reads or {}
         mu.run_array(
-            [(light, "_score_one", (sample,)) for sample in samples],
+            [
+                (
+                    light,
+                    "_score_one",
+                    (sample, aligned[sample[0]][2] if sample[0] in aligned else None),
+                )
+                for sample in samples
+            ],
             outdir=self.outdir,
             name="novel_scoring",
             cpu=self.workers,

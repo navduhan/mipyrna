@@ -5,8 +5,7 @@ bx-python ClusterTree, then filters the clusters by read length and size.
 
 Features:
     - Read length filtering before clustering
-    - Per-chromosome interval clustering with a configurable distance
-    - Removal of strands with a single read in a cluster
+    - Per-chromosome, per-strand interval clustering with a configurable distance
     - Per-cluster summary of read counts, maximum length and size
     - Samples clustered in parallel
 
@@ -36,12 +35,12 @@ from tqdm import tqdm
 class Cluster_reads:
     """Cluster aligned reads into candidate miRNA loci."""
 
-    def __init__(self,  cluster_distance=10, min_size=3,min_length=20, max_length=24, key='align_id'):
+    def __init__(self, cluster_distance=10, min_size=1, min_length=20, max_length=24, key='align_id'):
         """Initialize the clustering parameters.
 
         Args:
             cluster_distance (int): Maximum distance between reads in a cluster. Defaults to 10.
-            min_size (int): Minimum number of reads in a cluster. Defaults to 3.
+            min_size (int): Minimum number of collapsed read alignments in a cluster. Defaults to 1.
             min_length (int): Minimum read length kept. Defaults to 20.
             max_length (int): Maximum read length kept. Defaults to 24.
             key (str): Column used as the read index when present. Defaults to ``'align_id'``.
@@ -75,23 +74,30 @@ class Cluster_reads:
             input_file[self.key] = range(1, len(input_file) + 1)
             input_file = input_file.set_index(self.key)
 
-        cluster_trees = collections.defaultdict(lambda:
-            ClusterTree(self.cluster_distance, self.min_size))
-        for chrom, start, end, name in zip(input_file['name'], input_file.start, input_file.end, input_file.index, strict=True):
-            cluster_trees[chrom].insert(start, end, name)
+        cluster_trees = collections.defaultdict(
+            lambda: ClusterTree(self.cluster_distance, self.min_size)
+        )
+        for chrom, strand, start, end, name in zip(
+            input_file["name"],
+            input_file["strand"],
+            input_file.start,
+            input_file.end,
+            input_file.index,
+            strict=True,
+        ):
+            cluster_trees[(chrom, strand)].insert(start, end, name)
         cgroups = []
         icount = 1
-        for chrom in sorted(cluster_trees):
-            cltree = cluster_trees[chrom]
-        
+        for chrom, strand in sorted(cluster_trees):
+            cltree = cluster_trees[(chrom, strand)]
+
             for start, end, ids in cltree.getregions():
                 c = input_file.loc[ids].copy()
-                c['cl_start'] = start
-                c['cl_end'] = end
-                c['cluster'] = icount
-                c = c[c.groupby('strand')['strand'].transform('size') > 1]
+                c["cl_start"] = start
+                c["cl_end"] = end
+                c["cluster"] = icount
                 cgroups.append(c)
-                icount +=1
+                icount += 1
         if cgroups:
             df = pd.concat(cgroups)
         else:

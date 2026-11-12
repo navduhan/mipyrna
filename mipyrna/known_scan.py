@@ -776,6 +776,9 @@ def merge_known_calls(known_df, scan_df, species):
                     mature_reads=call.total_reads,
                     position=call.position,
                     star_reads=call.star_reads,
+                    five_prime_consistency=float(
+                        getattr(call, "five_prime_consistency", float("nan"))
+                    ),
                     star=call.star,
                     rfam_reads=float(getattr(call, "rfam_reads", 0.0)),
                     Rfam=str(getattr(call, "Rfam", "-")),
@@ -816,6 +819,9 @@ def merge_known_calls(known_df, scan_df, species):
                 "position": call.position,
                 "star_reads": call.star_reads,
                 "inconsistent_fraction": float("nan"),
+                "five_prime_consistency": float(
+                    getattr(call, "five_prime_consistency", float("nan"))
+                ),
                 "star": call.star,
                 "randfold_pvalue": float("nan"),
                 "cluster": float("nan"),

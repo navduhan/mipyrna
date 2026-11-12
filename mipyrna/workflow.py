@@ -185,9 +185,10 @@ def _check_read_policy(output, resume, rfam_filter):
     """Reject cached alignments or scores from a different read-processing policy.
 
     QC and collapsed reads remain reusable. Older discovery caches predate both
-    deterministic cluster ordering and the Rfam annotations, so they need a new run.
+    deterministic cluster ordering, Rfam annotations and literature biogenesis filters,
+    so they need a new run.
     """
-    policy = {"revision": "ordered-labelled-rfam15.1-v1", "rfam_filter": rfam_filter}
+    policy = {"revision": "ordered-labelled-rfam15.1-lit-v2", "rfam_filter": rfam_filter}
     path = os.path.join(output, ".resume", "read_policy.json")
     temp = os.path.join(output, "3.miRNA_Discovery", "temp")
     cached = (
@@ -228,12 +229,13 @@ def run_workflow(
     jobs=None,
     adapter=None,
     trimmer="trimmomatic",
-    require_star=False,
-    read_cutoff=50,
+    require_star=True,
+    read_cutoff=20,
     min_mature_reads=10,
     min_star_reads=1,
     weighted=False,
-    max_inconsistent=0.1,
+    max_inconsistent=0.25,
+    min_5p_consistency=0.5,
     min_novel_score=1.0,
     known_scan=False,
     known_min_reads=10,
@@ -264,12 +266,13 @@ def run_workflow(
         jobs (int, optional): Samples to run at once. Derived from ``cpu`` when None.
         adapter (str, optional): 3' adapter name or sequence. Auto-detected when None.
         trimmer (str): ``'trimmomatic'``, ``'flexbar'`` or ``'trim_galore'``. Defaults to ``'trimmomatic'``.
-        require_star (bool): Keep only novel miRNAs with star reads. Defaults to False.
-        read_cutoff (int): Minimum reads of a cluster to build candidates. Defaults to 50.
+        require_star (bool): Keep only novel miRNAs with star reads. Defaults to True.
+        read_cutoff (int): Minimum reads of a cluster to build candidates. Defaults to 20.
         min_mature_reads (int): Minimum mature reads of a candidate. Defaults to 10.
         min_star_reads (int): Star reads needed when ``require_star`` is set. Defaults to 1.
         weighted (bool): Share each read across the miRNAs it maps to when counting. Defaults to False.
-        max_inconsistent (float): Maximum fraction of the reads on a novel hairpin outside the mature and star positions. Defaults to 0.1.
+        max_inconsistent (float): Maximum fraction of the reads on a novel hairpin outside the mature and star positions. Defaults to 0.25.
+        min_5p_consistency (float): Minimum share of mature-locus reads starting at the modal 5' end for novel miRNAs. Defaults to 0.5.
         min_novel_score (float): Minimum heuristic score of a novel miRNA. Defaults to 1.0.
         known_scan (bool): Detect known miRNAs from reads aligned to known precursors and merge
             them into the known table. Defaults to False.
@@ -446,13 +449,17 @@ def run_workflow(
         log.info("Reading aligned reads")
         aligned_reads = Read_process().aligned_reads(samples=aligned_files, alignType='SAM', jobs=jobs)
         log.info("Clustering reads")
-        clusters = Cluster_reads().get_clusters(aligned_reads, jobs=jobs)
+        min_len, max_len = (18, 25) if species_type == "animals" else (20, 24)
+        clusters = Cluster_reads(min_length=min_len, max_length=max_len).get_clusters(
+            aligned_reads, jobs=jobs
+        )
 
         mirna_dir = _stage_dir(output, "3.miRNA_Discovery")
         metadata["stage_dirs"]["discovery"] = mirna_dir
         log.info("Predicting novel miRNAs")
         novel = Novel_miRNA(
             samples=clusters,
+            aligned_reads=aligned_reads,
             genome=genome,
             species=species,
             species_type=species_type,
@@ -463,6 +470,7 @@ def run_workflow(
             min_mature_reads=min_mature_reads,
             min_star_reads=min_star_reads,
             max_inconsistent=max_inconsistent,
+            min_5p_consistency=min_5p_consistency,
             min_novel_score=min_novel_score,
             workers=score_threads,
             jobs=score_jobs,
@@ -482,6 +490,9 @@ def run_workflow(
             min_mature_reads=novel.min_mature_reads,
             require_star=novel.require_star,
             min_star_reads=novel.min_star_reads,
+            max_inconsistent=novel.max_inconsistent,
+            min_5p_consistency=novel.min_5p_consistency,
+            min_novel_score=novel.min_novel_score,
             random_seed=novel.random_seed,
             known_scan=known_scan,
             known_min_reads=known_min_reads,

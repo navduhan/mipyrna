@@ -625,12 +625,14 @@ def _discovery(meta, params, base, known, novel):
     out: list = [
         Paragraph("miRNA discovery", H1),
         Paragraph(
-            "Aligned reads were clustered into candidate loci. Precursors around each locus were folded with ViennaRNA "
+            "Aligned reads were clustered per strand into candidate loci. Precursors around each locus were folded with ViennaRNA "
             f"and scored with the bundled {params.get('species_type', '')} neural network model. A candidate is kept if "
-            f"its score is at least {params.get('score_cutoff', '-')}, its randfold p-value is at most "
+            f"its duplex structure passes, its score is at least {params.get('score_cutoff', '-')}, its dinucleotide randfold p-value is at most "
             f"{params.get('randfold_pvalue_cutoff', '-')} and it has at least {params.get('min_mature_reads', '-')} "
             "mature reads. Candidates matching a known miRNA (BLAST identity above 94% over at least 18 nt with at most a "
-            "1-nt 5' offset) are reported as known and the rest as novel. Novel miRNAs are computational predictions and should be validated.",
+            "1-nt 5' offset) are reported as known; remaining novel candidates must also satisfy Dicer precision "
+            f"(at most {params.get('max_inconsistent', 0.25)} inconsistent hairpin reads) and 5' cleavage homogeneity "
+            f"(at least {params.get('min_5p_consistency', 0.5)}). Novel miRNAs are computational predictions and should be validated.",
             BODY,
         ),
     ]
@@ -644,7 +646,11 @@ def _discovery(meta, params, base, known, novel):
     stars = [(label, int((df["star_reads"] >= max(1, params.get("min_star_reads") or 1)).sum()), len(df))
              for label, df in (("Known", known), ("Novel", novel)) if df is not None and len(df) and "star_reads" in df.columns]
     if stars:
-        rule = "Candidates without star reads were removed." if params.get("require_star") else "Star reads were not required, so candidates without them can be present."
+        rule = (
+            "Novel candidates without star reads were removed (known miRNAs without star reads remain eligible)."
+            if params.get("require_star")
+            else "Star reads were not required, so novel candidates without them can be present."
+        )
         out += [
             Paragraph("Star read support", H2),
             Paragraph(

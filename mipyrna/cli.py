@@ -133,12 +133,18 @@ def build_parser(defaults=None):
     wf.add_argument("--adapter", help="3' adapter: kit name or sequence (default: auto-detect)")
     wf.add_argument("--dryrun", action="store_true", help="Show the QC, trimming and alignment commands without running them")
     wf.add_argument("--resume", action="store_true", help="Reuse --outdir and skip the stages and samples an earlier run finished")
-    wf.add_argument("--require-star", action="store_true", help="Keep only novel miRNAs with star reads")
+    wf.add_argument(
+        "--require-star",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Require star reads on the opposite arm for novel miRNAs (default: on)",
+    )
     wf.add_argument("--weighted", action="store_true", help="Share each read across the miRNAs it maps to when counting")
-    wf.add_argument("--read-cutoff", type=int, default=50, help="Minimum reads of a cluster to build candidates (default: 50)")
+    wf.add_argument("--read-cutoff", type=int, default=20, help="Minimum reads of a cluster to build candidates (default: 20)")
     wf.add_argument("--min-mature-reads", type=int, default=10, help="Minimum mature reads of a candidate (default: 10)")
     wf.add_argument("--min-star-reads", type=int, default=1, help="Star reads needed with --require-star (default: 1)")
-    wf.add_argument("--max-inconsistent", type=float, default=0.1, help="Maximum fraction of hairpin reads outside the mature and star positions (default: 0.1)")
+    wf.add_argument("--max-inconsistent", type=float, default=0.25, help="Maximum fraction of hairpin reads outside the mature and star positions (default: 0.25)")
+    wf.add_argument("--min-5p-consistency", type=float, default=0.5, help="Minimum fraction of mature-locus reads sharing the modal 5' end for novel miRNAs (default: 0.5)")
     wf.add_argument("--min-novel-score", type=float, default=1.0, help="Minimum heuristic score of a novel miRNA (default: 1.0)")
     wf.add_argument("--known-scan", action="store_true", help="Detect known miRNAs from reads aligned to known precursors and merge them into the known table")
     wf.add_argument("--known-min-reads", type=int, default=10, help="Minimum reads on a known precursor arm to call it detected (default: 10)")
@@ -279,6 +285,7 @@ def main(argv=None):
             min_star_reads=args.min_star_reads,
             weighted=args.weighted,
             max_inconsistent=args.max_inconsistent,
+            min_5p_consistency=args.min_5p_consistency,
             min_novel_score=args.min_novel_score,
             known_scan=args.known_scan,
             known_min_reads=args.known_min_reads,
