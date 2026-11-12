@@ -1449,7 +1449,13 @@ class Novel_miRNA:
             list: Non-empty candidate precursor DataFrames, one per scored cluster.
         """
         clusts = sample[3][sample[3].reads >= self.readsCutoff]
-        groups = dict(tuple(sample[2].groupby("cluster")))
+        keep_clusters = set(clusts["cluster"])
+        kept_reads = (
+            sample[2][sample[2]["cluster"].isin(keep_clusters)]
+            if keep_clusters
+            else sample[2].iloc[:0]
+        )
+        groups = dict(tuple(kept_reads.groupby("cluster"))) if len(kept_reads) else {}
         if all_reads is None and self.aligned_reads and sample[0] in self.aligned_reads:
             all_reads = self.aligned_reads[sample[0]][2]
         if all_reads is None:

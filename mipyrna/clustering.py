@@ -86,20 +86,26 @@ class Cluster_reads:
             strict=True,
         ):
             cluster_trees[(chrom, strand)].insert(start, end, name)
-        cgroups = []
+        member_ids = []
+        cl_starts = []
+        cl_ends = []
+        cl_nums = []
         icount = 1
         for chrom, strand in sorted(cluster_trees):
             cltree = cluster_trees[(chrom, strand)]
 
             for start, end, ids in cltree.getregions():
-                c = input_file.loc[ids].copy()
-                c["cl_start"] = start
-                c["cl_end"] = end
-                c["cluster"] = icount
-                cgroups.append(c)
+                count = len(ids)
+                member_ids.extend(ids)
+                cl_starts.extend([start] * count)
+                cl_ends.extend([end] * count)
+                cl_nums.extend([icount] * count)
                 icount += 1
-        if cgroups:
-            df = pd.concat(cgroups)
+        if member_ids:
+            df = input_file.loc[member_ids].copy()
+            df["cl_start"] = cl_starts
+            df["cl_end"] = cl_ends
+            df["cluster"] = cl_nums
         else:
             df = input_file.iloc[:0].copy()
             for column in ("cl_start", "cl_end", "cluster"):
