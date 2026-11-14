@@ -37,7 +37,6 @@ import json
 import os
 import re
 from datetime import datetime
-from importlib import metadata as importlib_metadata
 from xml.sax.saxutils import escape
 
 import numpy as np
@@ -84,15 +83,14 @@ _figures = itertools.count(1)
 
 
 def _version():
-    """Get the installed miPyRNA version.
+    """Get the miPyRNA package version.
 
     Returns:
-        str: Version string, or ``'unknown'`` if the package is not installed.
+        str: The version string.
     """
-    try:
-        return importlib_metadata.version("mipyrna")
-    except importlib_metadata.PackageNotFoundError:
-        return "unknown"
+    from mipyrna import __version__
+
+    return __version__
 
 
 def _read_table(path):

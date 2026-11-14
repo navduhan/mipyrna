@@ -2,33 +2,28 @@ name: mipyrna
 channels:
   - conda-forge
   - bioconda
-  - defaults
-  - r
 
 dependencies:
-  - python
+  - python>=3.10,<3.13
   - pip
-  - setuptools
+  - setuptools>=68
   - wheel
 
-  # Core Python scientific stack
+  # Core scientific & reporting stack
   - numpy
   - pandas
   - scipy
   - matplotlib
   - seaborn
-  - statsmodels
   - scikit-learn
   - openpyxl
   - requests
   - tqdm
   - psutil
-  - jinja2
-  - tabulate
   - reportlab
-  - notebook
+  - adjusttext
 
-  # Bioinformatics Python dependencies used by miPyRNA
+  # Bioinformatics & deep-learning dependencies
   - biopython
   - pyfaidx
   - pysam
@@ -36,31 +31,20 @@ dependencies:
   - bx-python
   - forgi
   - viennarna
-  - adjusttext
   - keras
   - tensorflow
 
-  # R / DE analysis
+  # R differential expression stack
   - r-base
-  - r-essentials
   - rpy2
   - bioconductor-deseq2
   - bioconductor-edger
 
-  # External tools used in workflow
-  - fastqc
-  - flexbar
-  - trimmomatic
-  - trim-galore
-  - sortmerna
-  - star
-  - hisat2
+  # External small RNA-seq tools
   - bowtie
-  - bowtie2
-  - subread
-  - samtools
-  - bamtools
-  - bedtools
   - blast
-  - mirdeep2
   - miranda
+  - fastqc
+  - trimmomatic
+  - flexbar
+  - trim-galore

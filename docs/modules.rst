@@ -41,6 +41,11 @@ mipyrna.known
 
 .. automodule:: mipyrna.known
 
+mipyrna.known_scan
+------------------
+
+.. automodule:: mipyrna.known_scan
+
 mipyrna.knowndb
 ---------------
 

@@ -25,6 +25,7 @@ Classes / Functions / Exceptions:
 :Author: Naveen Duhan
 """
 
+import importlib
 import shutil
 import sys
 from importlib import metadata
@@ -41,6 +42,45 @@ PINNED = {
     "forgi": "2.2.3",
 }
 
+_PACKAGE_ALIASES = {
+    "tensorflow": (
+        "tensorflow",
+        "tensorflow-base",
+        "tensorflow-cpu",
+        "tensorflow-gpu",
+        "tensorflow-macos",
+        "tensorflow-intel",
+    ),
+    "ViennaRNA": ("ViennaRNA", "viennarna"),
+}
+
+_MODULE_FALLBACKS = {
+    "tensorflow": "tensorflow",
+    "keras": "keras",
+    "numpy": "numpy",
+    "ViennaRNA": "RNA",
+    "forgi": "forgi",
+}
+
+
+def _resolve_package_version(name):
+    """Resolve a distribution or module version across pip and Conda installs."""
+    for dist_name in _PACKAGE_ALIASES.get(name, (name,)):
+        try:
+            return metadata.version(dist_name)
+        except metadata.PackageNotFoundError:
+            continue
+    module_name = _MODULE_FALLBACKS.get(name)
+    if module_name:
+        try:
+            module = importlib.import_module(module_name)
+            mod_version = getattr(module, "__version__", None)
+            if mod_version is not None:
+                return str(mod_version)
+        except Exception:
+            return None
+    return None
+
 
 def package_versions():
     """Get the installed version of each pinned library.
@@ -51,10 +91,7 @@ def package_versions():
     """
     versions: dict[str, str | None] = {"python": sys.version.split()[0]}
     for name in PINNED:
-        try:
-            versions[name] = metadata.version(name)
-        except metadata.PackageNotFoundError:
-            versions[name] = None
+        versions[name] = _resolve_package_version(name)
     return versions
 
 

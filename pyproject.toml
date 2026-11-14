@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "miPyRNA"
-version = "0.5"
+version = "1.0.0"
 dynamic = ["dependencies"]
-description = "miPyRNA a python based Small RNA Sequencing analysis package"
+description = "miPyRNA: end-to-end Python toolkit for small RNA-seq analysis in plants and animals"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
@@ -19,6 +19,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Bio-Informatics",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
 ]
 
 [project.urls]

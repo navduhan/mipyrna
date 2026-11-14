@@ -466,5 +466,57 @@ class LiteratureBiogenesisTests(unittest.TestCase):
         self.assertTrue(ini_override.require_star)
 
 
+class ReleasePolishTests(unittest.TestCase):
+    def test_fastqc_param_has_no_missing_adapter_file(self):
+        config = mu.parse_config_file(Path(__file__).resolve().parents[1] / "mipyrna/param/fastqc.ini")
+        options = " ".join(config["fastqc"]).split()
+        self.assertNotIn("-a", options)
+        self.assertIn("--noextract", options)
+
+    def test_version_helpers_match_package_release(self):
+        import re
+
+        import mipyrna
+        from mipyrna import cli, report
+
+        pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+        match = re.search(r'^version\s*=\s*"([^"]+)"', pyproject.read_text(encoding="utf-8"), re.M)
+        self.assertIsNotNone(match)
+        assert match is not None
+        declared = match.group(1)
+        self.assertEqual(declared, "1.0.0")
+        self.assertEqual(mipyrna.__version__, declared)
+        self.assertEqual(cli._version(), declared)
+        self.assertEqual(report._version(), declared)
+
+    def test_report_subcommand_autodiscovers_nested_workflow_metadata(self):
+        from mipyrna import cli
+
+        with tempfile.TemporaryDirectory() as temp:
+            report_dir = Path(temp) / "8.Report"
+            report_dir.mkdir(parents=True)
+            saved_meta = {"species": "ath", "species_type": "plants", "parameters": {"cpu": 16}}
+            meta_file = report_dir / "workflow_metadata.json"
+            meta_file.write_text(json.dumps(saved_meta))
+            with patch("mipyrna.report.generate_report", return_value=(str(report_dir / "miPyRNA_report.pdf"), str(meta_file))) as gen:
+                rc = cli.main(["report", "--outdir", temp])
+                self.assertEqual(rc, 0)
+                gen.assert_called_once_with(outdir=str(report_dir), metadata=saved_meta)
+
+    def test_check_package_versions_falls_back_to_module_version_for_conda(self):
+        from importlib import metadata as importlib_metadata
+        from types import SimpleNamespace
+
+        from mipyrna import check
+
+        with (
+            patch.object(check.metadata, "version", side_effect=importlib_metadata.PackageNotFoundError("tensorflow")),
+            patch.object(check.importlib, "import_module", return_value=SimpleNamespace(__version__="2.20.0")),
+        ):
+            versions = check.package_versions()
+            self.assertEqual(versions["tensorflow"], "2.20.0")
+            self.assertEqual(versions["ViennaRNA"], "2.20.0")
+
+
 if __name__ == "__main__":
     unittest.main()

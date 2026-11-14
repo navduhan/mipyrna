@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.abspath(".."))
 project = "miPyRNA"
 copyright = "2026, Naveen Duhan"
 author = "Naveen Duhan"
-release = "0.5"
+release = "1.0.0"
 
 extensions = [
     "sphinx.ext.autodoc",

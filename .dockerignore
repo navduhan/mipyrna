@@ -1,0 +1,14 @@
+.git
+.gitignore
+.ruff_cache
+.pytest_cache
+.vscode
+.DS_Store
+__pycache__
+*.py[cod]
+*.egg-info
+build
+dist
+docs/_build
+mipyrna_results*
+*.log

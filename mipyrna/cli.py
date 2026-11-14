@@ -36,19 +36,17 @@ import configparser
 import json
 import os
 import sys
-from importlib.metadata import PackageNotFoundError, version
 
 
 def _version():
-    """Get the installed miPyRNA version.
+    """Get the miPyRNA package version.
 
     Returns:
-        str: The version string, or ``"unknown"`` if the package is not installed.
+        str: The version string.
     """
-    try:
-        return version("miPyRNA")
-    except PackageNotFoundError:
-        return "unknown"
+    from mipyrna import __version__
+
+    return __version__
 
 
 def load_config(path):
@@ -331,10 +329,20 @@ def main(argv=None):
     if args.command == "report":
         from mipyrna.report import generate_report
         metadata = None
-        if args.metadata_json:
-            with open(args.metadata_json) as fh:
+        meta_json = args.metadata_json
+        out_report_dir = args.outdir
+        if not meta_json:
+            direct = os.path.join(args.outdir, "workflow_metadata.json")
+            nested = os.path.join(args.outdir, "8.Report", "workflow_metadata.json")
+            if os.path.isfile(direct):
+                meta_json = direct
+            elif os.path.isfile(nested):
+                meta_json = nested
+                out_report_dir = os.path.join(args.outdir, "8.Report")
+        if meta_json:
+            with open(meta_json) as fh:
                 metadata = json.load(fh)
-        report, meta = generate_report(outdir=args.outdir, metadata=metadata)
+        report, meta = generate_report(outdir=out_report_dir, metadata=metadata)
         print(json.dumps({"report": report, "metadata": meta}, indent=2))
         return 0
 

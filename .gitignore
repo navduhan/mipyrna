@@ -1,33 +1,32 @@
-prna
-mipyrna/__pycache__
-mipyrna/DS_Store
-mipyrna/example
-mipyrna_results*
-analysis_report.html
+# Python byte-compiled / caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
 
-.DS_Store
-.mipyrna
-.venv
-mtry.ipynb
-build
-mipyrna.egg-info
-miPyRNA.egg-info
-.Rprofile
-mipyrna.log
-test2.ipynb
-test.ipynb
-mipyrna.log
-deg.png
-dist
+# Packaging / build artifacts
+build/
+dist/
+*.egg-info/
 meta.yaml
 build.sh
 bld.bat
-mipyrna/data/ncRNA_rfam.fa
-benchmark/results
-benchmark/fastq
-benchmark/metadata
-benchmark/references
-.ruff_cache
+docs/_build/
 
-docs/_build
-.vscode
+# Virtual environments & local configs
+.venv/
+prna/
+.mipyrna/
+.vscode/
+.Rprofile
+.DS_Store
+
+# Runtime & scratch outputs
+mipyrna/data/ncRNA_rfam.fa
+mipyrna/example/
+mipyrna_results*/
+*.log
+analysis_report.html
+deg.png
+*.ipynb
