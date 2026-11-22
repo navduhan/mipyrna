@@ -20,7 +20,7 @@
 ### Option 1: Conda / Mamba (Recommended)
 
 ```bash
-git clone https://github.com/navduhan/mipyrna.git
+git clone https://github.com/usubioinfo/mipyrna.git
 cd mipyrna
 conda env create -f mipyrna_environment.yaml
 conda activate mipyrna
@@ -38,7 +38,7 @@ mipyrna --check
 If the required external command-line tools and R packages are already available on `PATH`:
 
 ```bash
-git clone https://github.com/navduhan/mipyrna.git
+git clone https://github.com/usubioinfo/mipyrna.git
 cd mipyrna
 pip install .
 mipyrna --check
@@ -47,7 +47,7 @@ mipyrna --check
 ### Option 3: Docker
 
 ```bash
-git clone https://github.com/navduhan/mipyrna.git
+git clone https://github.com/usubioinfo/mipyrna.git
 cd mipyrna
 docker build -t mipyrna .
 docker run --rm mipyrna mipyrna --check

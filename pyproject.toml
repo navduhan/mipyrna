@@ -23,7 +23,7 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/navduhan/mipyrna"
+Homepage = "https://github.com/usubioinfo/mipyrna"
 
 [project.scripts]
 mipyrna = "mipyrna.cli:main"
